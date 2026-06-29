@@ -6,7 +6,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
-use tokio::io::AsyncWriteExt;
 
 /// Configuration for Cloud-Init NoCloud metadata.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -124,7 +123,7 @@ impl CloudInitIsoBuilder {
                 input_dir.to_str().ok_or_else(|| "Invalid input directory path".to_string())?,
             ];
             let mut cmd = tokio::process::Command::new("xorriso");
-            cmd.args(&xorriso_args);
+            cmd.args(xorriso_args);
             cmd.output().await.map_err(|e| format!("Failed to execute xorriso: {}", e))?
         } else {
             let mkisofs_args = [
@@ -136,7 +135,7 @@ impl CloudInitIsoBuilder {
                 input_dir.to_str().ok_or_else(|| "Invalid input directory path".to_string())?,
             ];
             let mut cmd_fallback = tokio::process::Command::new("mkisofs");
-            cmd_fallback.args(&mkisofs_args);
+            cmd_fallback.args(mkisofs_args);
             cmd_fallback.output().await.map_err(|e| {
                 format!("Failed to execute mkisofs: {}", e)
             })?
