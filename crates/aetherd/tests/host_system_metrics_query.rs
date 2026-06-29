@@ -17,6 +17,7 @@ fn test_host_system_metrics_query() -> Result<(), Box<dyn std::error::Error>> {
     assert!(metrics.load_one >= 0.0);
     assert!(metrics.load_five >= 0.0);
     assert!(metrics.load_fifteen >= 0.0);
+    assert!(metrics.cpu_cores > 0);
 
     // Verify Memory Info (capacity should be non-zero)
     assert!(metrics.mem_total > 0);

@@ -46,6 +46,8 @@ pub struct SystemMetrics {
     pub disk_available: u64,
     /// NVMe controller temperature in degrees Celsius.
     pub nvme_temp: f64,
+    /// Number of physical/logical CPU cores.
+    pub cpu_cores: u32,
 }
 
 /// Helper struct for parsing CPU load averages.
@@ -247,6 +249,10 @@ impl TelemetryCollector {
             35.0
         });
 
+        let cpu_cores = std::thread::available_parallelism()
+            .map(|n| n.get() as u32)
+            .unwrap_or(4);
+
         SystemMetrics {
             load_one: load.one,
             load_five: load.five,
@@ -256,6 +262,7 @@ impl TelemetryCollector {
             disk_total: disk.total_bytes,
             disk_available: disk.available_bytes,
             nvme_temp,
+            cpu_cores,
         }
     }
 }

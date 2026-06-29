@@ -4,6 +4,7 @@
 #![deny(clippy::panic)]
 
 pub mod telemetry;
+pub mod bidder;
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
