@@ -30,8 +30,7 @@ impl TokenManager {
             .map_err(|e| e.to_string())?
             .as_secs();
         let payload = format!("{node_id}:{now}");
-        let mut mac = HmacSha256::new_from_slice(&self.secret)
-            .map_err(|e| e.to_string())?;
+        let mut mac = HmacSha256::new_from_slice(&self.secret).map_err(|e| e.to_string())?;
         mac.update(payload.as_bytes());
         let signature = hex::encode(mac.finalize().into_bytes());
         Ok(format!("{node_id}:{now}:{signature}"))
@@ -64,8 +63,7 @@ impl TokenManager {
 
         // Validate signature
         let payload = format!("{node_id}:{timestamp_str}");
-        let mut mac = HmacSha256::new_from_slice(&self.secret)
-            .map_err(|e| e.to_string())?;
+        let mut mac = HmacSha256::new_from_slice(&self.secret).map_err(|e| e.to_string())?;
         mac.update(payload.as_bytes());
         let expected_signature = hex::encode(mac.finalize().into_bytes());
 
@@ -139,7 +137,7 @@ mod tests {
             .as_secs();
         let past_time = now - 100;
         let payload = format!("{node_id}:{past_time}");
-        
+
         let mut mac = HmacSha256::new_from_slice(&manager.secret).unwrap();
         mac.update(payload.as_bytes());
         let signature = hex::encode(mac.finalize().into_bytes());
@@ -164,4 +162,3 @@ mod tests {
         assert!(manager.validate_token(&tampered_token, node_id).is_err());
     }
 }
-

@@ -12,8 +12,8 @@ use aether_auth::mtls::{create_client_tls_config, create_server_tls_config};
 use aether_auth::proto::aether_aggregator_client::AetherAggregatorClient;
 use aether_auth::proto::aether_node_server::{AetherNode, AetherNodeServer};
 use aether_auth::proto::{
-    BidRequest, BidResponse, ExecuteVmRequest, ExecuteVmResponse,
-    ListVMsRequest, ListVMsResponse, RegisterNodeRequest, TeardownVmRequest, TeardownVmResponse,
+    BidRequest, BidResponse, ExecuteVmRequest, ExecuteVmResponse, ListVMsRequest, ListVMsResponse,
+    RegisterNodeRequest, TeardownVmRequest, TeardownVmResponse,
 };
 use aether_auth::token::TokenManager;
 
@@ -89,11 +89,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &creds.client_key,
         "localhost",
     );
-    let server_tls_config = create_server_tls_config(
-        &creds.ca_cert,
-        &creds.server_cert,
-        &creds.server_key,
-    );
+    let server_tls_config =
+        create_server_tls_config(&creds.ca_cert, &creds.server_cert, &creds.server_key);
 
     let token_manager = Arc::new(TokenManager::new(
         b"supersecretkeyforauthsupersecretkeyforauth".to_vec(),
@@ -108,7 +105,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting Aether Node Daemon on {local_addr}");
     let server_handle = tokio::spawn(async move {
         let _ = Server::builder()
-            .tls_config(server_tls_config).unwrap()
+            .tls_config(server_tls_config)
+            .unwrap()
             .add_service(AetherNodeServer::new(daemon_service))
             .serve(local_addr)
             .await;

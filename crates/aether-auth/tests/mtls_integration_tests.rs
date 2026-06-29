@@ -4,8 +4,8 @@ use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
 use aether_auth::mtls::{create_client_tls_config, create_server_tls_config, test_pki};
-use aether_auth::proto::aether_aggregator_server::{AetherAggregator, AetherAggregatorServer};
 use aether_auth::proto::aether_aggregator_client::AetherAggregatorClient;
+use aether_auth::proto::aether_aggregator_server::{AetherAggregator, AetherAggregatorServer};
 use aether_auth::proto::{
     HeartbeatRequest, HeartbeatResponse, RegisterNodeRequest, RegisterNodeResponse,
 };
@@ -49,11 +49,8 @@ async fn test_mtls_client_server_integration() {
     let addr: SocketAddr = "127.0.0.1:50061".parse().unwrap();
     let creds = test_pki::generate_test_creds().unwrap();
 
-    let server_tls = create_server_tls_config(
-        &creds.ca_cert,
-        &creds.server_cert,
-        &creds.server_key,
-    );
+    let server_tls =
+        create_server_tls_config(&creds.ca_cert, &creds.server_cert, &creds.server_key);
 
     let token_manager = Arc::new(TokenManager::new(
         b"supersecretkeyforauthsupersecretkeyforauth".to_vec(),
@@ -109,11 +106,8 @@ async fn test_mtls_client_without_cert_fails() {
     let addr: SocketAddr = "127.0.0.1:50063".parse().unwrap();
     let creds = test_pki::generate_test_creds().unwrap();
 
-    let server_tls = create_server_tls_config(
-        &creds.ca_cert,
-        &creds.server_cert,
-        &creds.server_key,
-    );
+    let server_tls =
+        create_server_tls_config(&creds.ca_cert, &creds.server_cert, &creds.server_key);
 
     let token_manager = Arc::new(TokenManager::new(
         b"supersecretkeyforauthsupersecretkeyforauth".to_vec(),

@@ -84,11 +84,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Dynamic PKI generation for development / testing out of the box
     let creds = aether_auth::mtls::test_pki::generate_test_creds()?;
-    let server_tls_config = create_server_tls_config(
-        &creds.ca_cert,
-        &creds.server_cert,
-        &creds.server_key,
-    );
+    let server_tls_config =
+        create_server_tls_config(&creds.ca_cert, &creds.server_cert, &creds.server_key);
 
     let token_manager = Arc::new(TokenManager::new(
         b"supersecretkeyforauthsupersecretkeyforauth".to_vec(),

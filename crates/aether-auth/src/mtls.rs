@@ -54,7 +54,9 @@ pub mod test_pki {
         // Generate CA
         let mut ca_params = CertificateParams::default();
         ca_params.is_ca = IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
-        ca_params.distinguished_name.push(DnType::CommonName, "Aether Test CA");
+        ca_params
+            .distinguished_name
+            .push(DnType::CommonName, "Aether Test CA");
         let ca_keypair = KeyPair::generate(&rcgen::PKCS_ECDSA_P256_SHA256)?;
         ca_params.key_pair = Some(ca_keypair);
         let ca_cert = Certificate::from_params(ca_params)?;
@@ -62,22 +64,34 @@ pub mod test_pki {
 
         // Generate Server Cert signed by CA
         let mut server_params = CertificateParams::default();
-        server_params.distinguished_name.push(DnType::CommonName, "localhost");
-        server_params.subject_alt_names.push(SanType::DnsName("localhost".to_string()));
-        server_params.subject_alt_names.push(SanType::IpAddress("127.0.0.1".parse()?));
+        server_params
+            .distinguished_name
+            .push(DnType::CommonName, "localhost");
+        server_params
+            .subject_alt_names
+            .push(SanType::DnsName("localhost".to_string()));
+        server_params
+            .subject_alt_names
+            .push(SanType::IpAddress("127.0.0.1".parse()?));
         let server_keypair = KeyPair::generate(&rcgen::PKCS_ECDSA_P256_SHA256)?;
         server_params.key_pair = Some(server_keypair);
         let server_cert = Certificate::from_params(server_params)?;
-        let server_cert_pem = server_cert.serialize_pem_with_signer(&ca_cert)?.into_bytes();
+        let server_cert_pem = server_cert
+            .serialize_pem_with_signer(&ca_cert)?
+            .into_bytes();
         let server_key_pem = server_cert.serialize_private_key_pem().into_bytes();
 
         // Generate Client Cert signed by CA
         let mut client_params = CertificateParams::default();
-        client_params.distinguished_name.push(DnType::CommonName, "aetherd-client");
+        client_params
+            .distinguished_name
+            .push(DnType::CommonName, "aetherd-client");
         let client_keypair = KeyPair::generate(&rcgen::PKCS_ECDSA_P256_SHA256)?;
         client_params.key_pair = Some(client_keypair);
         let client_cert = Certificate::from_params(client_params)?;
-        let client_cert_pem = client_cert.serialize_pem_with_signer(&ca_cert)?.into_bytes();
+        let client_cert_pem = client_cert
+            .serialize_pem_with_signer(&ca_cert)?
+            .into_bytes();
         let client_key_pem = client_cert.serialize_private_key_pem().into_bytes();
 
         Ok(GeneratedCreds {
@@ -100,11 +114,8 @@ mod tests {
         let creds = test_pki::generate_test_creds().unwrap();
 
         // Create server TLS config
-        let _server_config = create_server_tls_config(
-            &creds.ca_cert,
-            &creds.server_cert,
-            &creds.server_key,
-        );
+        let _server_config =
+            create_server_tls_config(&creds.ca_cert, &creds.server_cert, &creds.server_key);
         // We can't easily inspect the internal fields, but compiling/building confirms it's valid.
 
         // Create client TLS config
@@ -116,4 +127,3 @@ mod tests {
         );
     }
 }
-
