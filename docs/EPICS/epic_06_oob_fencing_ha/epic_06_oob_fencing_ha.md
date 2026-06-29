@@ -17,6 +17,7 @@ This Epic implements high availability and safety measures for Project Aether. I
 - [ ] `[STORY-06.2]` [Reconciler Deadman Switch Heartbeat & Failover Monitoring](file:///Users/casibbald/Workspace/remote/microscaler/Aether/docs/EPICS/epic_06_oob_fencing_ha/story_06_2_deadman_switch.md) - **Status:** Draft
 - [ ] `[STORY-06.3]` [STONITH Fencing Execution Workflow](file:///Users/casibbald/Workspace/remote/microscaler/Aether/docs/EPICS/epic_06_oob_fencing_ha/story_06_3_stonith_workflow.md) - **Status:** Draft
 - [ ] `[STORY-06.4]` [Asynchronous ZFS Volume Replication (zrepl integration)](file:///Users/casibbald/Workspace/remote/microscaler/Aether/docs/EPICS/epic_06_oob_fencing_ha/story_06_4_zfs_replication.md) - **Status:** Draft
+- [ ] `[STORY-06.5]` [Kubernetes Management Plane Recovery & Auto-Discovery Sync](file:///Users/casibbald/Workspace/remote/microscaler/Aether/docs/EPICS/epic_06_oob_fencing_ha/story_06_5_k8s_recovery_discovery.md) - **Status:** Draft
 
 ## 3. Technical Design & Architecture Constraints
 
@@ -50,3 +51,4 @@ This Epic implements high availability and safety measures for Project Aether. I
 2. A network partition triggers the Aggregator's deadman monitor (15-second heartbeat timeout).
 3. The Aggregator triggers the fencing command and receives verification of slot shutdown.
 4. The Aggregator re-auctions and restarts the fenced VM on a new blade host using the latest replicated ZVOL snapshot.
+5. The Aggregator recovers from a control plane crash by performing a discovery sync and reconciling K8s CRD statuses without disrupting running guest VM processes.

@@ -112,3 +112,50 @@ To enable sub-100ms startup times for Firecracker microVMs, Aether cannot afford
     *   Each Compute blade runs a local `containerd` image cache.
     *   When an image version is updated, the Aggregator broadcasts a pre-pull command to the node daemons.
     *   Daemons fetch the OCI image from the local midplane registry mirror over the 10Gb Virtual Connect midplane, ensuring that the image blocks are hot-cached on local disks before the VM auction is triggered.
+
+---
+
+## 6. Management Plane Crash & State Recovery (State Reconciliation)
+
+If the management Kubernetes utility cluster crashes, the tenant virtual machines running on the bare-metal compute and infrastructure blades are completely unaffected. However, the management plane must reconcile the declarative state with the physical state upon recovery.
+
+```
+                  [ K8s Management Cluster Crashes ]
+                                  │
+                  (Running VMs continue on blades)
+                                  │
+             [ K8s Recovers: GitOps / Velero Restores CRDs ]
+                                  │
+                                  ▼
+             [ Aggregator Operator Restarts: Init Sync ]
+                                  │
+                     (Broadcast gRPC: ListVMs)
+                                  │
+             ┌────────────────────┴────────────────────┐
+             ▼                                         ▼
+      [ Match Spec ]                           [ Mismatch Spec ]
+  (Reconstruct CRD Status)            ┌────────────────┴────────────────┐
+             │                        ▼                                 ▼
+      [ VM is Running ]      [ Spec Exists but no VM ]        [ VM runs but no Spec ]
+             │                        │                                 │
+     (Update status to                ▼                                 ▼
+         "Running")         (Trigger Auction to                 (Instruct aetherd to
+                                reschedule VM)                    gracefully stop VM)
+```
+
+### A. Decoupled Workload Lifecycle
+The local node daemon `aetherd` runs as an independent systemd service on each blade. It manages `QEMU-KVM` and `Firecracker` hypervisor processes directly on the host OS. When the Kubernetes control plane is offline, these processes continue to execute and route tenant traffic without interruption.
+
+### B. Declarative State Restore
+*   **GitOps Reconciliation:** FluxCD automatically re-applies all `AetherVirtualDeployment` CRD definitions from the git repository once the K8s API server recovers.
+*   **Dynamic State Backup:** Kubernetes etcd backups (managed via Velero to a secure storage pool) restore runtime metadata, including tenant-allocated namespaces and configuration secrets.
+
+### C. Active Auto-Discovery & Status Reconstruction
+Upon startup, the `aether-aggregator` initiates a reconciliation sweep rather than initiating fresh deployments:
+1.  **Discovery Broadcast:** The Aggregator broadcasts a gRPC `ListVMs` request to all active node daemons registered in its cluster topology.
+2.  **Daemon-Side Inspection:** `aetherd` inspects active process trees (matching PIDs against local config file maps) and local ZFS `ZVOL` mounts, returning the running VM UUIDs, allocated MAC/IP mappings, and performance states.
+3.  **State Re-alignment Loop:**
+    *   **Status Update:** If the VM is running and its configuration matches a restored `AetherVirtualDeployment` CRD, the Aggregator populates the `.status` subresource of the CRD (assigning the running blade slot, active IP, and setting the state to `Running`).
+    *   **Orphaned Spec Recovery:** If a CRD spec exists but the corresponding VM is not found on any blade, the Aggregator marks the workload as orphaned and initiates a new reverse-bidding auction to reschedule and provision it.
+    *   **Stale VM Cleanup:** If a VM is running on a blade but has no corresponding CRD spec in Kubernetes, the Aggregator commands `aetherd` to gracefully shutdown the VM and release its allocated host networking/storage resources.
+
