@@ -119,26 +119,37 @@ impl CloudInitIsoBuilder {
                 "-V",
                 "config-2",
                 "-o",
-                iso_path.to_str().ok_or_else(|| "Invalid ISO path".to_string())?,
-                input_dir.to_str().ok_or_else(|| "Invalid input directory path".to_string())?,
+                iso_path
+                    .to_str()
+                    .ok_or_else(|| "Invalid ISO path".to_string())?,
+                input_dir
+                    .to_str()
+                    .ok_or_else(|| "Invalid input directory path".to_string())?,
             ];
             let mut cmd = tokio::process::Command::new("xorriso");
             cmd.args(xorriso_args);
-            cmd.output().await.map_err(|e| format!("Failed to execute xorriso: {}", e))?
+            cmd.output()
+                .await
+                .map_err(|e| format!("Failed to execute xorriso: {}", e))?
         } else {
             let mkisofs_args = [
                 "-R",
                 "-V",
                 "config-2",
                 "-o",
-                iso_path.to_str().ok_or_else(|| "Invalid ISO path".to_string())?,
-                input_dir.to_str().ok_or_else(|| "Invalid input directory path".to_string())?,
+                iso_path
+                    .to_str()
+                    .ok_or_else(|| "Invalid ISO path".to_string())?,
+                input_dir
+                    .to_str()
+                    .ok_or_else(|| "Invalid input directory path".to_string())?,
             ];
             let mut cmd_fallback = tokio::process::Command::new("mkisofs");
             cmd_fallback.args(mkisofs_args);
-            cmd_fallback.output().await.map_err(|e| {
-                format!("Failed to execute mkisofs: {}", e)
-            })?
+            cmd_fallback
+                .output()
+                .await
+                .map_err(|e| format!("Failed to execute mkisofs: {}", e))?
         };
 
         if !output.status.success() {

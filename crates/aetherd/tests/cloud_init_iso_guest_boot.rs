@@ -5,7 +5,6 @@
 
 use aetherd::cloud_init::{CloudInitConfig, CloudInitIsoBuilder};
 use std::io::{Read, Seek, SeekFrom};
-use tempfile::tempdir;
 
 #[tokio::test]
 #[allow(clippy::unwrap_used)]
