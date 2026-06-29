@@ -6,6 +6,7 @@
 pub mod bidder;
 pub mod hypervisor;
 pub mod telemetry;
+pub mod cloud_init;
 pub mod vsock;
 
 use std::sync::Arc;
