@@ -73,11 +73,15 @@ impl Bidder {
 
         // 2. Score Calculations (when resources are available)
         // Memory free fraction after allocation (higher is better)
-        let mem_left = metrics.mem_available.saturating_sub(memory_request_bytes as u64);
+        let mem_left = metrics
+            .mem_available
+            .saturating_sub(memory_request_bytes as u64);
         let mem_score = (mem_left as f64 / metrics.mem_total as f64).clamp(0.0, 1.0);
 
         // Disk free fraction after allocation (higher is better)
-        let disk_left = metrics.disk_available.saturating_sub(disk_request_bytes as u64);
+        let disk_left = metrics
+            .disk_available
+            .saturating_sub(disk_request_bytes as u64);
         let disk_score = (disk_left as f64 / metrics.disk_total as f64).clamp(0.0, 1.0);
 
         // CPU score representing load headroom
@@ -122,12 +126,8 @@ mod tests {
         let bidder = Bidder::new(BidderConfig::default());
         let metrics = mock_metrics();
 
-        let score = bidder.calculate_bid(
-            &metrics,
-            2,
-            2 * 1024 * 1024 * 1024,
-            10 * 1024 * 1024 * 1024,
-        );
+        let score =
+            bidder.calculate_bid(&metrics, 2, 2 * 1024 * 1024 * 1024, 10 * 1024 * 1024 * 1024);
         assert!((1..=1000).contains(&score));
     }
 
@@ -137,12 +137,8 @@ mod tests {
         let metrics = mock_metrics();
 
         // Request 8GB memory when only 5GB is available
-        let score = bidder.calculate_bid(
-            &metrics,
-            2,
-            8 * 1024 * 1024 * 1024,
-            10 * 1024 * 1024 * 1024,
-        );
+        let score =
+            bidder.calculate_bid(&metrics, 2, 8 * 1024 * 1024 * 1024, 10 * 1024 * 1024 * 1024);
         assert_eq!(score, -1);
     }
 
@@ -152,12 +148,7 @@ mod tests {
         let metrics = mock_metrics();
 
         // Request 60GB disk when only 50GB is available
-        let score = bidder.calculate_bid(
-            &metrics,
-            2,
-            1024 * 1024 * 1024,
-            60 * 1024 * 1024 * 1024,
-        );
+        let score = bidder.calculate_bid(&metrics, 2, 1024 * 1024 * 1024, 60 * 1024 * 1024 * 1024);
         assert_eq!(score, -1);
     }
 
@@ -167,12 +158,7 @@ mod tests {
         let mut metrics = mock_metrics();
         metrics.nvme_temp = 85.0; // critical
 
-        let score = bidder.calculate_bid(
-            &metrics,
-            2,
-            1024 * 1024 * 1024,
-            10 * 1024 * 1024 * 1024,
-        );
+        let score = bidder.calculate_bid(&metrics, 2, 1024 * 1024 * 1024, 10 * 1024 * 1024 * 1024);
         assert_eq!(score, -1);
     }
 
@@ -182,12 +168,7 @@ mod tests {
         let mut metrics = mock_metrics();
         metrics.load_one = 9.0; // load ratio = 9.0 / 4 = 2.25 > 2.0
 
-        let score = bidder.calculate_bid(
-            &metrics,
-            2,
-            1024 * 1024 * 1024,
-            10 * 1024 * 1024 * 1024,
-        );
+        let score = bidder.calculate_bid(&metrics, 2, 1024 * 1024 * 1024, 10 * 1024 * 1024 * 1024);
         assert_eq!(score, -1);
     }
 }

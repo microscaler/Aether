@@ -74,8 +74,10 @@ pub fn resolve_tie(
 
         // Compare SSD wear (lower is better).
         // Since SSD wear is f64, use partial_cmp with a fallback to Equal if NaN.
-        let wear_cmp = a.0.ssd_wear.partial_cmp(&b.0.ssd_wear)
-            .unwrap_or(std::cmp::Ordering::Equal);
+        let wear_cmp =
+            a.0.ssd_wear
+                .partial_cmp(&b.0.ssd_wear)
+                .unwrap_or(std::cmp::Ordering::Equal);
         if wear_cmp != std::cmp::Ordering::Equal {
             return wear_cmp;
         }
@@ -84,7 +86,9 @@ pub fn resolve_tie(
         a.1.cmp(&b.1)
     });
 
-    let (best_candidate, _, _) = parsed_candidates.first().ok_or("Failed to retrieve best candidate")?;
+    let (best_candidate, _, _) = parsed_candidates
+        .first()
+        .ok_or("Failed to retrieve best candidate")?;
     Ok((*best_candidate).clone())
 }
 

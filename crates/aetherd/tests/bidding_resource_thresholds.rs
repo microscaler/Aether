@@ -11,9 +11,9 @@ fn test_metrics() -> SystemMetrics {
         load_one: 0.5,
         load_five: 0.5,
         load_fifteen: 0.5,
-        mem_total: 16 * 1024 * 1024 * 1024, // 16 GB
-        mem_available: 8 * 1024 * 1024 * 1024, // 8 GB
-        disk_total: 200 * 1024 * 1024 * 1024, // 200 GB
+        mem_total: 16 * 1024 * 1024 * 1024,       // 16 GB
+        mem_available: 8 * 1024 * 1024 * 1024,    // 8 GB
+        disk_total: 200 * 1024 * 1024 * 1024,     // 200 GB
         disk_available: 100 * 1024 * 1024 * 1024, // 100 GB
         nvme_temp: 35.0,
         cpu_cores: 4,
@@ -26,12 +26,8 @@ fn test_bidding_resource_thresholds_evaluation() -> Result<(), Box<dyn std::erro
     let metrics = test_metrics();
 
     // 1. Normal bidding: requested resources fit well
-    let normal_score = bidder.calculate_bid(
-        &metrics,
-        2,
-        4 * 1024 * 1024 * 1024,
-        20 * 1024 * 1024 * 1024,
-    );
+    let normal_score =
+        bidder.calculate_bid(&metrics, 2, 4 * 1024 * 1024 * 1024, 20 * 1024 * 1024 * 1024);
     assert!((1..=1000).contains(&normal_score));
 
     // 2. Memory overrun: request 12GB memory when only 8GB is free

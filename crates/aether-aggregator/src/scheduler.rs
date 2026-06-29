@@ -109,10 +109,7 @@ impl Scheduler {
         ssd_wears: &std::collections::HashMap<String, f64>,
         chassis_active_vms: &std::collections::HashMap<u32, u32>,
     ) -> Result<Option<BidResponse>, String> {
-        let valid_bids: Vec<&BidResponse> = bids
-            .iter()
-            .filter(|b| b.score > 0)
-            .collect();
+        let valid_bids: Vec<&BidResponse> = bids.iter().filter(|b| b.score > 0).collect();
 
         if valid_bids.is_empty() {
             return Ok(None);

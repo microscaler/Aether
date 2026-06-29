@@ -3,8 +3,10 @@
 #![deny(clippy::expect_used)]
 #![deny(clippy::panic)]
 
-pub mod telemetry;
 pub mod bidder;
+pub mod hypervisor;
+pub mod telemetry;
+pub mod vsock;
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
