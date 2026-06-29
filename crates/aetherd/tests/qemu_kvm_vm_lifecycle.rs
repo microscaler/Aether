@@ -20,37 +20,29 @@ async fn test_qemu_kvm_vm_lifecycle() -> Result<(), Box<dyn std::error::Error>> 
     let qmp_socket_path_clone = qmp_socket_path.clone();
     let qmp_server = tokio::spawn(async move {
         if let Ok(listener) = tokio::net::UnixListener::bind(&qmp_socket_path_clone) {
-            while let Ok((stream, _)) = listener.accept().await {
+            if let Ok((stream, _)) = listener.accept().await {
                 let (read_half, mut write_half) = stream.into_split();
                 let mut reader = tokio::io::BufReader::new(read_half);
                 // Write greeting
-                if write_half
+                let _ = write_half
                     .write_all(
                         b"{\"QMP\": {\"version\": {\"qemu\": {\"micro\": 0, \"minor\": 0, \"major\": 9}, \"package\": \"\"}, \"capabilities\": []}}\n",
                     )
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
+                    .await;
                 let mut line = String::new();
-                if reader.read_line(&mut line).await.is_err() {
-                    break;
-                }
-                if !line.contains("qmp_capabilities") {
-                    break;
-                }
-                if write_half.write_all(b"{\"return\": {}}\n").await.is_err() {
-                    break;
-                }
-                line.clear();
-                if reader.read_line(&mut line).await.is_err() {
-                    break;
-                }
-                if line.contains("query-status") {
-                    let _ = write_half
-                        .write_all(b"{\"return\": {\"running\": true, \"status\": \"running\"}}\n")
-                        .await;
+                if reader.read_line(&mut line).await.is_ok() {
+                    if line.contains("qmp_capabilities") {
+                        if write_half.write_all(b"{\"return\": {}}\n").await.is_ok() {
+                            line.clear();
+                            if reader.read_line(&mut line).await.is_ok() {
+                                if line.contains("query-status") {
+                                    let _ = write_half
+                                        .write_all(b"{\"return\": {\"running\": true, \"status\": \"running\"}}\n")
+                                        .await;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
