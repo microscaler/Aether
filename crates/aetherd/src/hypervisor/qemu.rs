@@ -175,11 +175,17 @@ impl Hypervisor for QemuHypervisor {
             ));
 
             args.push("-qmp".to_string());
-            args.push(format!("unix:{},server,nowait", self.config.qmp_socket_path));
+            args.push(format!(
+                "unix:{},server,nowait",
+                self.config.qmp_socket_path
+            ));
 
             if let Some(ref tap) = self.config.host_tap_device {
                 args.push("-netdev".to_string());
-                args.push(format!("tap,id=net0,ifname={},script=no,downscript=no", tap));
+                args.push(format!(
+                    "tap,id=net0,ifname={},script=no,downscript=no",
+                    tap
+                ));
                 args.push("-device".to_string());
                 args.push("virtio-net-pci,netdev=net0".to_string());
             }
@@ -326,6 +332,9 @@ mod tests {
 
         // Test args generation implicitly via spawn check
         // Check that pid path matches
-        assert_eq!(hypervisor.pid_path(), hypervisor.log_path.replace(".log", ".pid"));
+        assert_eq!(
+            hypervisor.pid_path(),
+            hypervisor.log_path.replace(".log", ".pid")
+        );
     }
 }

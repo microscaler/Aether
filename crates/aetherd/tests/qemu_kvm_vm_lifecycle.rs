@@ -30,14 +30,17 @@ async fn test_qemu_kvm_vm_lifecycle() -> Result<(), Box<dyn std::error::Error>> 
                     )
                     .await;
                 let mut line = String::new();
-                if reader.read_line(&mut line).await.is_ok() && line.contains("qmp_capabilities") {
-                    if write_half.write_all(b"{\"return\": {}}\n").await.is_ok() {
-                        line.clear();
-                        if reader.read_line(&mut line).await.is_ok() && line.contains("query-status") {
-                            let _ = write_half
-                                .write_all(b"{\"return\": {\"running\": true, \"status\": \"running\"}}\n")
-                                .await;
-                        }
+                if reader.read_line(&mut line).await.is_ok()
+                    && line.contains("qmp_capabilities")
+                    && write_half.write_all(b"{\"return\": {}}\n").await.is_ok()
+                {
+                    line.clear();
+                    if reader.read_line(&mut line).await.is_ok() && line.contains("query-status") {
+                        let _ = write_half
+                            .write_all(
+                                b"{\"return\": {\"running\": true, \"status\": \"running\"}}\n",
+                            )
+                            .await;
                     }
                 }
             }
