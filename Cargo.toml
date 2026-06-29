@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/aether-aggregator",
+    "crates/aetherd",
+    "crates/aether-auth",
+    "crates/aether-fence",
+]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unused_qualifications = "warn"
+
+[workspace.lints.clippy]
+cognitive_complexity = "deny"
+type_complexity = "deny"
+too_many_lines = { level = "deny" }
+pedantic = { level = "warn", priority = -1 }
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+debug = false

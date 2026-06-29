@@ -1,0 +1,4 @@
+# clippy.toml - JSF AV Rules-inspired static bounds
+cognitive-complexity-threshold = 15
+stack-size-threshold = 512000
+too-many-arguments-threshold = 8
