@@ -4,6 +4,7 @@
 #![deny(clippy::panic)]
 
 pub mod firecracker;
+pub mod qemu;
 
 use async_trait::async_trait;
 
