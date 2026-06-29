@@ -77,7 +77,8 @@ async fn start_mock_node(
     addr: SocketAddr,
     creds: &test_pki::GeneratedCreds,
 ) -> Result<tokio::task::JoinHandle<()>, Box<dyn std::error::Error>> {
-    let server_tls = create_server_tls_config(&creds.ca_cert, &creds.server_cert, &creds.server_key);
+    let server_tls =
+        create_server_tls_config(&creds.ca_cert, &creds.server_cert, &creds.server_key);
     let service = MockNode {
         node_id: node_id.to_string(),
         score,

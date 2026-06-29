@@ -8,9 +8,9 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tonic::transport::{Channel, ClientTlsConfig};
 
+use crate::registry::NodeRegistry;
 use aether_auth::proto::aether_node_client::AetherNodeClient;
 use aether_auth::proto::{BidRequest, BidResponse};
-use crate::registry::NodeRegistry;
 
 /// Scheduler handles broadcasting bidding requests to registered blades
 /// and selecting nodes for workloads.
@@ -106,8 +106,8 @@ impl Scheduler {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use aether_auth::mtls::test_pki::generate_test_creds;
     use aether_auth::mtls::create_client_tls_config;
+    use aether_auth::mtls::test_pki::generate_test_creds;
 
     #[tokio::test]
     async fn test_scheduler_empty_registry() {
