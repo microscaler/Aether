@@ -100,6 +100,68 @@ impl Scheduler {
 
         bids
     }
+
+    /// Evaluates the collected bids and selects the optimal node.
+    /// Filters out bids with score -1, finds the highest score, and resolves any ties deterministically.
+    pub fn select_winner(
+        &self,
+        bids: &[BidResponse],
+        ssd_wears: &std::collections::HashMap<String, f64>,
+        chassis_active_vms: &std::collections::HashMap<u32, u32>,
+    ) -> Result<Option<BidResponse>, String> {
+        let valid_bids: Vec<&BidResponse> = bids
+            .iter()
+            .filter(|b| b.score > 0)
+            .collect();
+
+        if valid_bids.is_empty() {
+            return Ok(None);
+        }
+
+        // Find the maximum score
+        let mut max_score = 0;
+        for bid in &valid_bids {
+            if bid.score > max_score {
+                max_score = bid.score;
+            }
+        }
+
+        // Collect all bids that have the maximum score
+        let tied_bids: Vec<&BidResponse> = valid_bids
+            .into_iter()
+            .filter(|b| b.score == max_score)
+            .collect();
+
+        if tied_bids.is_empty() {
+            return Ok(None);
+        }
+
+        if tied_bids.len() == 1 {
+            let winning_bid = tied_bids.first().ok_or("No bid at index 0")?;
+            return Ok(Some((*winning_bid).clone()));
+        }
+
+        // We have a tie! Use the tie-breaker module to resolve it.
+        let mut candidates = Vec::with_capacity(tied_bids.len());
+        for bid in &tied_bids {
+            let ssd_wear = *ssd_wears.get(&bid.node_id).unwrap_or(&0.0);
+            candidates.push(crate::tie_breaker::TieBreakerCandidate {
+                node_id: bid.node_id.clone(),
+                ssd_wear,
+            });
+        }
+
+        let winning_candidate = crate::tie_breaker::resolve_tie(&candidates, chassis_active_vms)?;
+
+        // Find the original bid matching the winning candidate's node_id
+        for bid in tied_bids {
+            if bid.node_id == winning_candidate.node_id {
+                return Ok(Some(bid.clone()));
+            }
+        }
+
+        Err("Winner node ID did not match any of the tied bids".to_string())
+    }
 }
 
 #[cfg(test)]

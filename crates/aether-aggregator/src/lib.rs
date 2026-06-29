@@ -5,6 +5,7 @@
 
 pub mod registry;
 pub mod scheduler;
+pub mod tie_breaker;
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
