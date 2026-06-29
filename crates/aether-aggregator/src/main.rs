@@ -3,77 +3,16 @@
 #![deny(clippy::expect_used)]
 #![deny(clippy::panic)]
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tonic::transport::Server;
-use tonic::{Request, Response, Status};
 
+use aether_aggregator::registry::NodeRegistry;
+use aether_aggregator::AetherAggregatorImpl;
 use aether_auth::mtls::create_server_tls_config;
-use aether_auth::proto::aether_aggregator_server::{AetherAggregator, AetherAggregatorServer};
-use aether_auth::proto::{
-    HeartbeatRequest, HeartbeatResponse, RegisterNodeRequest, RegisterNodeResponse,
-};
+use aether_auth::proto::aether_aggregator_server::AetherAggregatorServer;
 use aether_auth::token::TokenManager;
-
-/// Struct holding the active registered nodes in memory.
-#[derive(Default)]
-pub struct AggregatorState {
-    nodes: HashMap<String, String>, // node_id -> token
-}
-
-/// gRPC service implementation for Aether Aggregator.
-pub struct AetherAggregatorImpl {
-    state: Arc<RwLock<AggregatorState>>,
-    token_manager: Arc<TokenManager>,
-}
-
-impl AetherAggregatorImpl {
-    /// Creates a new instance of AetherAggregatorImpl.
-    pub fn new(token_manager: Arc<TokenManager>) -> Self {
-        Self {
-            state: Arc::new(RwLock::new(AggregatorState::default())),
-            token_manager,
-        }
-    }
-}
-
-#[tonic::async_trait]
-impl AetherAggregator for AetherAggregatorImpl {
-    async fn register_node(
-        &self,
-        request: Request<RegisterNodeRequest>,
-    ) -> Result<Response<RegisterNodeResponse>, Status> {
-        let req = request.into_inner();
-        let token = self
-            .token_manager
-            .generate_token(&req.node_id)
-            .map_err(Status::internal)?;
-
-        let mut state = self.state.write().await;
-        state.nodes.insert(req.node_id, token.clone());
-
-        Ok(Response::new(RegisterNodeResponse {
-            success: true,
-            token,
-        }))
-    }
-
-    async fn send_heartbeat(
-        &self,
-        request: Request<HeartbeatRequest>,
-    ) -> Result<Response<HeartbeatResponse>, Status> {
-        let req = request.into_inner();
-
-        // Validate the ephemeral token
-        self.token_manager
-            .validate_token(&req.token, &req.node_id)
-            .map_err(Status::unauthenticated)?;
-
-        Ok(Response::new(HeartbeatResponse { success: true }))
-    }
-}
 
 #[tokio::main]
 #[allow(clippy::unwrap_used)] // Allowed strictly on entrypoint startup path
@@ -90,7 +29,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let token_manager = Arc::new(TokenManager::new(
         b"supersecretkeyforauthsupersecretkeyforauth".to_vec(),
     ));
-    let aggregator = AetherAggregatorImpl::new(token_manager);
+    let registry = Arc::new(RwLock::new(NodeRegistry::new()));
+
+    // Spawn a background task to prune inactive nodes every 3 seconds
+    let registry_clone = Arc::clone(&registry);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
+        loop {
+            interval.tick().await;
+            let mut reg = registry_clone.write().await;
+            let pruned = reg.prune_inactive_nodes(std::time::Duration::from_secs(15));
+            if !pruned.is_empty() {
+                log::warn!("Pruned inactive nodes: {:?}", pruned);
+            }
+        }
+    });
+
+    let aggregator = AetherAggregatorImpl::new(registry, token_manager);
 
     Server::builder()
         .tls_config(server_tls_config)?

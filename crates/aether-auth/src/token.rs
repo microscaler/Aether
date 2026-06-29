@@ -161,4 +161,58 @@ mod tests {
 
         assert!(manager.validate_token(&tampered_token, node_id).is_err());
     }
+
+    #[test]
+    fn test_token_malformed() {
+        let secret = b"supersecretkeyforauthsupersecretkeyforauth".to_vec();
+        let manager = TokenManager::new(secret);
+        let node_id = "blade-01";
+
+        assert_eq!(
+            manager
+                .validate_token("malformed_token", node_id)
+                .unwrap_err(),
+            "Malformed token format"
+        );
+        assert_eq!(
+            manager.validate_token("part1:part2", node_id).unwrap_err(),
+            "Malformed token format"
+        );
+    }
+
+    #[test]
+    fn test_token_non_numeric_timestamp() {
+        let secret = b"supersecretkeyforauthsupersecretkeyforauth".to_vec();
+        let manager = TokenManager::new(secret);
+        let node_id = "blade-01";
+
+        assert!(manager
+            .validate_token("blade-01:not_a_number:signature", node_id)
+            .is_err());
+    }
+
+    #[test]
+    fn test_token_future() {
+        let secret = b"supersecretkeyforauthsupersecretkeyforauth".to_vec();
+        let manager = TokenManager::new(secret);
+        let node_id = "blade-01";
+
+        // Generate a token with a timestamp in the future (e.g. +100 seconds)
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let future_time = now + 100;
+        let payload = format!("{node_id}:{future_time}");
+
+        let mut mac = HmacSha256::new_from_slice(&manager.secret).unwrap();
+        mac.update(payload.as_bytes());
+        let signature = hex::encode(mac.finalize().into_bytes());
+        let future_token = format!("{node_id}:{future_time}:{signature}");
+
+        assert_eq!(
+            manager.validate_token(&future_token, node_id).unwrap_err(),
+            "Token expired or invalid timestamp"
+        );
+    }
 }

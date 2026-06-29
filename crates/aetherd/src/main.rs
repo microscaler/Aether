@@ -6,74 +6,14 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tonic::transport::Server;
-use tonic::{Request, Response, Status};
+use tonic::Request;
 
 use aether_auth::mtls::{create_client_tls_config, create_server_tls_config};
 use aether_auth::proto::aether_aggregator_client::AetherAggregatorClient;
-use aether_auth::proto::aether_node_server::{AetherNode, AetherNodeServer};
-use aether_auth::proto::{
-    BidRequest, BidResponse, ExecuteVmRequest, ExecuteVmResponse, ListVMsRequest, ListVMsResponse,
-    RegisterNodeRequest, TeardownVmRequest, TeardownVmResponse,
-};
+use aether_auth::proto::aether_node_server::AetherNodeServer;
+use aether_auth::proto::RegisterNodeRequest;
 use aether_auth::token::TokenManager;
-
-/// gRPC service implementation for Aether Node Daemon.
-pub struct AetherNodeImpl {
-    node_id: String,
-    token_manager: Arc<TokenManager>,
-}
-
-#[tonic::async_trait]
-impl AetherNode for AetherNodeImpl {
-    async fn request_reverse_bid(
-        &self,
-        _request: Request<BidRequest>,
-    ) -> Result<Response<BidResponse>, Status> {
-        Ok(Response::new(BidResponse {
-            node_id: self.node_id.clone(),
-            score: 950, // Mock healthy score
-        }))
-    }
-
-    async fn execute_vm(
-        &self,
-        request: Request<ExecuteVmRequest>,
-    ) -> Result<Response<ExecuteVmResponse>, Status> {
-        let req = request.into_inner();
-        self.token_manager
-            .validate_token(&req.token, &self.node_id)
-            .map_err(Status::unauthenticated)?;
-
-        Ok(Response::new(ExecuteVmResponse {
-            success: true,
-            ip_address: "192.168.1.100".to_string(),
-            mac_address: "52:54:00:12:34:56".to_string(),
-            error_message: String::new(),
-        }))
-    }
-
-    async fn teardown_vm(
-        &self,
-        request: Request<TeardownVmRequest>,
-    ) -> Result<Response<TeardownVmResponse>, Status> {
-        let req = request.into_inner();
-        self.token_manager
-            .validate_token(&req.token, &self.node_id)
-            .map_err(Status::unauthenticated)?;
-
-        Ok(Response::new(TeardownVmResponse {
-            success: true,
-            error_message: String::new(),
-        }))
-    }
-
-    async fn list_v_ms(
-        &self,
-        _request: Request<ListVMsRequest>,
-    ) -> Result<Response<ListVMsResponse>, Status> {
-        Ok(Response::new(ListVMsResponse { vms: vec![] }))
-    }
-}
+use aetherd::AetherNodeImpl;
 
 #[tokio::main]
 #[allow(clippy::unwrap_used)] // Allowed strictly on entrypoint startup path
@@ -97,10 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     // Expose Node Daemon Server API
-    let daemon_service = AetherNodeImpl {
-        node_id: node_id.clone(),
-        token_manager: token_manager.clone(),
-    };
+    let daemon_service = AetherNodeImpl::new(node_id.clone(), token_manager.clone());
 
     println!("Starting Aether Node Daemon on {local_addr}");
     let server_handle = tokio::spawn(async move {
