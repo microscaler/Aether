@@ -32,7 +32,7 @@ pub fn create_client_tls_config(
 
 /// Dynamic test helper module for generating self-signed certificates.
 pub mod test_pki {
-    use rcgen::{Certificate, CertificateParams, DnType, IsCa, KeyPair, SanType};
+    use rcgen::{CertificateParams, DnType, IsCa, Issuer, KeyPair, SanType};
 
     /// Struct containing generated PEM certificates and keys.
     pub struct GeneratedCreds {
@@ -51,48 +51,42 @@ pub mod test_pki {
     /// Generates certificates and keys for testing mTLS connections.
     /// Returns credentials as PEM bytes.
     pub fn generate_test_creds() -> Result<GeneratedCreds, Box<dyn std::error::Error>> {
-        // Generate CA
+        // Generate CA key and params
+        let ca_keypair = KeyPair::generate()?;
         let mut ca_params = CertificateParams::default();
         ca_params.is_ca = IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
         ca_params
             .distinguished_name
             .push(DnType::CommonName, "Aether Test CA");
-        let ca_keypair = KeyPair::generate(&rcgen::PKCS_ECDSA_P256_SHA256)?;
-        ca_params.key_pair = Some(ca_keypair);
-        let ca_cert = Certificate::from_params(ca_params)?;
-        let ca_cert_pem = ca_cert.serialize_pem()?.into_bytes();
+        let ca_cert = ca_params.self_signed(&ca_keypair)?;
+        let ca_cert_pem = ca_cert.pem().into_bytes();
 
-        // Generate Server Cert signed by CA
+        // Generate server key and params
+        let server_keypair = KeyPair::generate()?;
         let mut server_params = CertificateParams::default();
         server_params
             .distinguished_name
             .push(DnType::CommonName, "localhost");
         server_params
             .subject_alt_names
-            .push(SanType::DnsName("localhost".to_string()));
+            .push(SanType::DnsName("localhost".try_into()?));
         server_params
             .subject_alt_names
             .push(SanType::IpAddress("127.0.0.1".parse()?));
-        let server_keypair = KeyPair::generate(&rcgen::PKCS_ECDSA_P256_SHA256)?;
-        server_params.key_pair = Some(server_keypair);
-        let server_cert = Certificate::from_params(server_params)?;
-        let server_cert_pem = server_cert
-            .serialize_pem_with_signer(&ca_cert)?
-            .into_bytes();
-        let server_key_pem = server_cert.serialize_private_key_pem().into_bytes();
+        let ca_issuer = Issuer::new(ca_params.clone(), &ca_keypair);
+        let server_cert = server_params.signed_by(&server_keypair, &ca_issuer)?;
+        let server_cert_pem = server_cert.pem().into_bytes();
+        let server_key_pem = server_keypair.serialize_pem().into_bytes();
 
-        // Generate Client Cert signed by CA
+        // Generate client key and params
+        let client_keypair = KeyPair::generate()?;
         let mut client_params = CertificateParams::default();
         client_params
             .distinguished_name
             .push(DnType::CommonName, "aetherd-client");
-        let client_keypair = KeyPair::generate(&rcgen::PKCS_ECDSA_P256_SHA256)?;
-        client_params.key_pair = Some(client_keypair);
-        let client_cert = Certificate::from_params(client_params)?;
-        let client_cert_pem = client_cert
-            .serialize_pem_with_signer(&ca_cert)?
-            .into_bytes();
-        let client_key_pem = client_cert.serialize_private_key_pem().into_bytes();
+        let client_cert = client_params.signed_by(&client_keypair, &ca_issuer)?;
+        let client_cert_pem = client_cert.pem().into_bytes();
+        let client_key_pem = client_keypair.serialize_pem().into_bytes();
 
         Ok(GeneratedCreds {
             ca_cert: ca_cert_pem,
