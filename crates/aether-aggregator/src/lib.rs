@@ -4,6 +4,7 @@
 #![deny(clippy::panic)]
 
 pub mod registry;
+pub mod scheduler;
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
