@@ -5,13 +5,14 @@ import json
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Any
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 COBERTURA = BASE_DIR / "cobertura.xml"
 OUTPUT = BASE_DIR / "COVERAGE_REPORT.md"
 
 
-def parse_cobertura(path: Path) -> dict:
+def parse_cobertura(path: Path) -> dict[str, Any]:
     tree = ET.parse(path)
     root = tree.getroot()
 
@@ -85,7 +86,7 @@ def extract_crate(filepath: str) -> str:
     return "unknown"
 
 
-def main():
+def main() -> None:
     if not COBERTURA.exists():
         print(f"ERROR: {COBERTURA} not found. Run cargo tarpaulin first.", file=sys.stderr)
         sys.exit(1)
@@ -106,7 +107,7 @@ def main():
     percent = round(total_covered / total_valid * 100, 2) if total_valid else 0
 
     # Group by crate (from filtered classes)
-    crates: dict[str, list] = {}
+    crates: dict[str, list[Any]] = {}
     for cls in classes:
         crate = extract_crate(cls["filename"])
         crates.setdefault(crate, []).append(cls)

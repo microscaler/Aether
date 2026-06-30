@@ -2,3 +2,4 @@
 .idea
 target/
 cobertura.xml
+COVERAGE_REPORT.md
