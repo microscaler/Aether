@@ -8,23 +8,23 @@ repos:
     hooks:
       - id: cargo-fmt
         name: cargo fmt (check)
-        entry: cargo fmt -- --check
-        language: system
+        entry: hack/cargo-fmt-check.sh
+        language: script
         types: [rust]
         pass_filenames: false
 
       - id: cargo-clippy
         name: cargo clippy
-        entry: cargo clippy --workspace --all-targets -- -D warnings
-        language: system
+        entry: hack/cargo-clippy.sh
+        language: script
         types: [rust]
         pass_filenames: false
         require_serial: true
 
       - id: cargo-nextest
         name: cargo nextest
-        entry: cargo nextest run --workspace --all-targets
-        language: system
+        entry: hack/cargo-nextest.sh
+        language: script
         types: [rust]
         pass_filenames: false
         require_serial: true
