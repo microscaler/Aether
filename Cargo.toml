@@ -5,12 +5,14 @@ members = [
     "crates/aetherd",
     "crates/aether-auth",
     "crates/aether-fence",
+    "crates/pact-mock-server",
 ]
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
 unused_qualifications = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin)'] }
 
 [workspace.lints.clippy]
 cognitive_complexity = "deny"

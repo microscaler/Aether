@@ -2,10 +2,13 @@
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::expect_used)]
 #![deny(clippy::panic)]
+#![allow(missing_docs)]
 
 pub mod bidder;
 pub mod cloud_init;
 pub mod hypervisor;
+pub mod network;
+pub mod storage;
 pub mod telemetry;
 pub mod vsock;
 

@@ -21,7 +21,8 @@ Aether is structured as a single Rust Cargo workspace containing all the necessa
 │   ├── aether-aggregator/          # Kubernetes Operator & Bidding Convergence loop
 │   ├── aetherd/                    # Bare-metal local agent daemon
 │   ├── aether-auth/                # Mutual-TLS & Ephemeral token handshakes
-│   └── aether-fence/               # STONITH HPE iLO 5 / Redfish integration
+│   ├── aether-fence/               # STONITH HPE iLO 5 / Redfish integration
+│   └── pact-mock-server/           # Standalone mock server for physical chassis APIs
 ```
 
 ### Crate Roles
@@ -29,6 +30,7 @@ Aether is structured as a single Rust Cargo workspace containing all the necessa
 *   **`aetherd`:** The bare-metal node agent daemon. Work here if you are editing Firecracker execution loops, QEMU-KVM parameters, local Linux telemetry checks, or Cloud-Init ISO generation.
 *   **`aether-auth`:** Cryptographic identity library. Updates to mutual-TLS (mTLS) bootstrapping or ephemeral token generations should be made in this crate.
 *   **`aether-fence`:** Out-of-band fencing integration. Focus here if you are expanding Redfish REST client coverage for hardware vendors (e.g., HPE iLO 5).
+*   **`pact-mock-server`:** Standalone mock server simulating physical chassis REST APIs (such as HPE OneView). Work here if you are adding new vendor API contract mocks (e.g., Dell SmartFabric REST specs) or expanding chassis endpoint mocks.
 
 ---
 
@@ -42,4 +44,5 @@ Aether is structured as a single Rust Cargo workspace containing all the necessa
     cargo clippy --workspace --all-targets -- -D warnings
     cargo test --workspace
     ```
-4.  **Submit a Pull Request (PR):** Make sure your PR contains a detailed description matching the architectural guidelines in [ARCHITECTURE.md](file:///Users/casibbald/Workspace/remote/microscaler/Aether/ARCHITECTURE.md).
+4.  **Validate Chassis Integration Changes via Pact Contracts:** If you modify `MidplaneNetworkManager` clients (such as the HPE Virtual Connect client), you must run and update the Pact contract integration tests in `crates/aether-aggregator/tests/switch_vlan_tagging_integration.rs` to ensure contract validity.
+5.  **Submit a Pull Request (PR):** Make sure your PR contains a detailed description matching the architectural guidelines in [ARCHITECTURE.md](file:///Users/casibbald/Workspace/remote/microscaler/Aether/ARCHITECTURE.md).

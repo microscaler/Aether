@@ -17,3 +17,12 @@ pub mod token;
 pub mod proto {
     tonic::include_proto!("aether");
 }
+
+/// Auto-generated tonic/prost CSI gRPC modules.
+#[allow(clippy::unwrap_used)]
+#[allow(clippy::expect_used)]
+#[allow(clippy::panic)]
+#[allow(clippy::all)]
+pub mod csi {
+    tonic::include_proto!("csi.v1");
+}

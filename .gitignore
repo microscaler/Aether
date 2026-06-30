@@ -3,3 +3,4 @@
 target/
 cobertura.xml
 COVERAGE_REPORT.md
+*.log

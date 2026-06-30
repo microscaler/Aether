@@ -145,7 +145,7 @@ def main() -> None:
         file_list = crates[crate_name]
         lines.append(f"## `{crate_name}`\n")
 
-        for cls in sorted(file_list, key=lambda c: c["rate"]):
+        for cls in sorted(file_list, key=lambda c: (c["rate"], c["filename"])):
             pct = cls["rate"]
             # Color badge
             if pct >= 90:

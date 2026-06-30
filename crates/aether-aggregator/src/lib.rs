@@ -2,9 +2,12 @@
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::expect_used)]
 #![deny(clippy::panic)]
+#![allow(missing_docs)]
 
+pub mod network;
 pub mod registry;
 pub mod scheduler;
+pub mod storage;
 pub mod tie_breaker;
 
 use std::sync::Arc;

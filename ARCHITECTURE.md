@@ -72,6 +72,11 @@ The Out-of-Band (OOB) hardware power execution plane.
 *   **Fencing Enforcement:** Invoked by the Aggregator's recovery loop to execute hard power fencing (STONITH - Shoot The Other Node In The Head) via the HPE iLO 5 Redfish REST API.
 *   **Deterministic Safety:** Guarantees a rogue or partitioned node is completely shut down before its database volumes are cloned or its virtual machines are re-auctioned, avoiding file system corruption.
 
+### E. Pact Mock Server (`pact-mock-server`)
+A vendor-modularized standalone mock server simulating physical chassis backplanes and REST APIs (like HPE OneView).
+*   **Vendor Isolation:** Modular architecture isolating vendor-specific endpoints and behaviors in independent submodules (e.g. `crates/pact-mock-server/src/hpe_oneview.rs`).
+*   **Contract Testing:** Serves as the target mock provider for the Aggregator's midplane network driver client (`VirtualConnectClient`). Validates connection state tracking, token refreshes, and asynchronous task state polling under safe, local environments.
+
 ---
 
 ## 2. Dynamic Control & Data Flow
@@ -106,12 +111,54 @@ sequenceDiagram
 
 ## 3. Storage & Network Integration
 
-### Storage Substrate (ZFS on Linux)
-To deliver high-performance persistent storage without the latency of network-attached SANs:
+### Storage Substrate (ZFS on Linux & CSI Integration)
+To deliver high-performance persistent storage:
 *   Storage nodes (Slots 9-16) run **ZFS on Linux (ZoL)**.
 *   Templates are stored as base read-only ZFS snapshots.
 *   VM disks are created instantaneously as thin-provisioned **ZVOLs** cloned from base templates.
-*   The Kubernetes storage interface uses `democratic-csi` to dynamically manage these block allocations.
+*   **Kubernetes CSI Integration (Production - Network-Attached iSCSI):** Kubernetes running inside guest compute microVMs provisions storage via **`democratic-csi`** configured with the `zfs-generic-iscsi` driver. To maintain strict decoupling and reliability, volume claims are *never* mounted from the local blade running the VM. Instead:
+    1. The Aether Aggregator commands `aetherd` on the designated Storage Blade to cut the zvol and export it as an iSCSI target using the Linux SCSI Target framework (LIO).
+    2. The Compute Blade host OS acts as an iSCSI initiator, logging into the Storage Blade's iSCSI target portal over the high-speed **VLAN 11 (Storage Fabric)**.
+    3. The Compute Blade maps the iSCSI target locally as a block device (e.g., `/dev/sdX`) and maps `/dev/sdX` directly down into Firecracker's `virtio-blk` drive interface or QEMU-KVM's disk configuration.
+*   **Storage Network Configuration (VLAN 11):** All iSCSI traffic is isolated on a dedicated high-bandwidth **VLAN 11 (Storage Fabric)** over the HPE Virtual Connect 10Gb midplane fabric. Both Compute and Storage blade network interfaces for VLAN 11 must be configured with Jumbo Frames (**MTU 9000**) to optimize SCSI command processing, reduce CPU overhead, and maximize throughput.
+*   **CSI Driver Mocking & Conformance (Test):** The aggregator includes a custom **`AetherCsiDriver`** (`crates/aether-aggregator/src/storage/csi.rs`) implementing the standard gRPC CSI v1.x service. In test and CI environments, this component acts as a high-fidelity mock, staging and publishing block capability requests as regular files and filesystem capability requests as directories, simulating network-attached block mappings without requiring live iSCSI targets or `democratic-csi` deployments.
+
+#### Kubernetes StorageClass Configuration Spec (Production)
+The GitOps configuration for the storage provisioner standardizes on `org.democratic-csi.zfs-generic-iscsi`:
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: aether-zfs-iscsi
+provisioner: org.democratic-csi.zfs-generic-iscsi
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+parameters:
+  # Instructs democratic-csi to provision ZVOLs instead of datasets
+  detachedVolumes: "true"
+  zfsZpool: "zroot"
+  zfsDatasetParent: "zroot/kube-storage"
+  zfsBlocksize: "128K"
+  zfsEnableCompression: "true"
+  zfsCompression: "lz4"
+  zfsThinProvision: "true"
+  fsType: "ext4"
+  
+  # iSCSI Network Target & Initiator mapping settings
+  iscsi:
+    # Portal points to the storage blade target IP on VLAN 11 storage network
+    portal: "10.11.0.10:3260"
+    targetGroups:
+      - name: default
+        tpgt: 1
+    discovery:
+      auth:
+        type: None
+    session:
+      auth:
+        type: None
+```
 
 ### Network Tagging (HPE Virtual Connect)
 *   **VLAN 10 (Control Bus):** Directs private control plane traffic, isolated in hardware via HPE Virtual Connect Flex-10 MLAG.

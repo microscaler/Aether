@@ -18,14 +18,14 @@ for arg in "$@"; do
 done
 
 # Run coverage (XML output)
-cargo tarpaulin --workspace --out Xml --timeout 120 2>&1 | tee /tmp/tarpaulin.log || {
+cargo tarpaulin --workspace --exclude pact-mock-server --out Xml --timeout 120 2>&1 | tee /tmp/tarpaulin.log || {
     echo "ERROR: cargo tarpaulin failed"
     exit 1
 }
 
 # Extract coverage percentage from tarpaulin's "Coverage Results" summary line
 # Format: "83.22% coverage, 1413/1698 lines covered"
-COVERAGE=$(grep -oP '\d+\.\d+% coverage' /tmp/tarpaulin.log | grep -oP '\d+\.\d+')
+COVERAGE=$(grep -a -oP '\d+\.\d+% coverage' /tmp/tarpaulin.log | grep -a -oP '\d+\.\d+' | head -n 1)
 
 if [ -z "$COVERAGE" ]; then
     echo "ERROR: Could not parse coverage percentage from tarpaulin output"
