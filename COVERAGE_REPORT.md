@@ -1,6 +1,6 @@
 # Coverage Report (excl. main.rs)
 
-**1411** / **1629** lines covered — **86.62%**
+**1413** / **1629** lines covered — **86.74%**
 
 **Threshold:** 80% | **Status:** ✅ PASS
 
@@ -8,7 +8,7 @@
 | --- | --- | --- | --- | --- |
 | `aether-aggregator` | 7 | 372 | 430 | 86.5% |
 | `aether-auth` | 3 | 175 | 189 | 92.6% |
-| `aetherd` | 14 | 864 | 1010 | 85.5% |
+| `aetherd` | 14 | 866 | 1010 | 85.7% |
 
 ## `aether-aggregator`
 
@@ -115,14 +115,13 @@
 
 ### crates/aetherd/src/hypervisor/firecracker.rs
 
-- Coverage: 🟡 **71.9%** (64/89 lines)
+- Coverage: 🟡 **74.2%** (66/89 lines)
 - **Missed lines:**
   - Line 138
   - Lines 158-174
   - Line 177
   - Line 184
   - Line 213
-  - Lines 235-236
   - Line 262
   - Line 273
 
@@ -223,10 +222,6 @@
 - **Missed lines:**
   - Line 93
 
-### crates/aetherd/src/vsock.rs
-
-- Coverage: 🟢 **100.0%** (79/79 lines)
-
 ### crates/aetherd/tests/bidding_resource_thresholds.rs
 
 - Coverage: 🟢 **100.0%** (34/34 lines)
@@ -238,3 +233,7 @@
 ### crates/aetherd/tests/qemu_kvm_vm_lifecycle.rs
 
 - Coverage: 🟢 **100.0%** (48/48 lines)
+
+### crates/aetherd/src/vsock.rs
+
+- Coverage: 🟢 **100.0%** (79/79 lines)
