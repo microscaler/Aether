@@ -28,3 +28,11 @@ repos:
         types: [rust]
         pass_filenames: false
         require_serial: true
+
+      - id: cargo-coverage
+        name: cargo coverage
+        entry: hack/cargo-coverage.sh
+        language: script
+        types: [rust]
+        pass_filenames: false
+        require_serial: true
