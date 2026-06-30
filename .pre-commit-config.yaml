@@ -27,6 +27,14 @@ repos:
         types_or: [python]
         pass_filenames: true
 
+      - id: mypy
+        name: mypy
+        entry: mypy .
+        language: system
+        types_or: [python]
+        pass_filenames: false
+        require_serial: true
+
       - id: cargo-clippy
         name: cargo clippy
         entry: hack/cargo-clippy.sh
