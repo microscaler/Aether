@@ -5,6 +5,14 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+"hack/**/*.py" = [
+    "ANN201", "C901", "COM812", "D", "E501", "ERA001", "EXE001",
+    "N818", "PERF101", "PERF203", "PERF401", "PLR0912", "PLR0913",
+    "PLR0915", "PLR2004", "PTH123", "S314", "T201", "TID252",
+]
+"scripts/**/*.py" = ["INP001", "T201"]
+
 [tool.mypy]
 python_version = "3.10"
 strict = true

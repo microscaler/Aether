@@ -2,9 +2,14 @@
 
 
 def greet(name: str) -> str:
-    """Returns a greeting."""
+    """Return a greeting."""
     return f"Hello, {name}!"
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Run the dummy script."""
     print(greet("Aether"))
+
+
+if __name__ == "__main__":
+    main()

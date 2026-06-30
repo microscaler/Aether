@@ -13,6 +13,20 @@ repos:
         types: [rust]
         pass_filenames: false
 
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format
+        language: system
+        types_or: [python]
+        pass_filenames: true
+
+      - id: ruff-lint
+        name: ruff lint (pedantic)
+        entry: ruff check --select ALL
+        language: system
+        types_or: [python]
+        pass_filenames: true
+
       - id: cargo-clippy
         name: cargo clippy
         entry: hack/cargo-clippy.sh

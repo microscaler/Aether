@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Parse cobertura.xml and produce a human-readable markdown coverage report."""
 
-import xml.etree.ElementTree as ET
 import json
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,7 +20,10 @@ def parse_cobertura(path: Path) -> dict:
         "lines_valid": int(root.get("lines-valid", 0)),
         "line_rate": float(root.get("line-rate", 0)),
     }
-    stats["percent"] = round(stats["lines_covered"] / stats["lines_valid"] * 100, 2) if stats["lines_valid"] else 0
+    if stats["lines_valid"]:
+        stats["percent"] = round(stats["lines_covered"] / stats["lines_valid"] * 100, 2)
+    else:
+        stats["percent"] = 0
 
     packages = []
     for pkg in root.findall("packages/package"):
@@ -43,20 +46,24 @@ def parse_cobertura(path: Path) -> dict:
                 else:
                     missed_lines.append(lineno)
 
-            classes.append({
-                "filename": filename,
-                "rate": round(cls_rate * 100, 1),
-                "lines_covered": len(hits_lines),
-                "lines_total": len(hits_lines) + len(missed_lines),
-                "hits_lines": hits_lines,
-                "missed_lines": missed_lines,
-            })
+            classes.append(
+                {
+                    "filename": filename,
+                    "rate": round(cls_rate * 100, 1),
+                    "lines_covered": len(hits_lines),
+                    "lines_total": len(hits_lines) + len(missed_lines),
+                    "hits_lines": hits_lines,
+                    "missed_lines": missed_lines,
+                }
+            )
 
-        packages.append({
-            "name": pkg_name,
-            "rate": round(pkg_rate * 100, 1),
-            "classes": classes,
-        })
+        packages.append(
+            {
+                "name": pkg_name,
+                "rate": round(pkg_rate * 100, 1),
+                "classes": classes,
+            }
+        )
 
     return {"stats": stats, "packages": packages}
 
@@ -148,7 +155,9 @@ def main():
                 badge = "🔴"
 
             lines.append(f"### {cls['filename']}\n")
-            lines.append(f"- Coverage: {badge} **{pct}%** ({cls['lines_covered']}/{cls['lines_total']} lines)\n")
+            cov_text = f"- Coverage: {badge} **{pct}%**"
+            cov_text += f" ({cls['lines_covered']}/{cls['lines_total']} lines)"
+            lines.append(cov_text)
 
             if cls["missed_lines"]:
                 lines.append("- **Missed lines:**")
@@ -171,8 +180,10 @@ def main():
                         lines.append(f"  - Lines {s}-{e}")
             lines.append("")
 
-    # Write report
+    # Write report only if content changed (to avoid pre-commit churn)
     markdown = "\n".join(lines)
+    if OUTPUT.exists() and OUTPUT.read_text() == markdown:
+        return  # No change
     OUTPUT.write_text(markdown)
     print(f"Coverage report written to {OUTPUT}")
     print(f"  {total_covered}/{total_valid} lines ({percent}%)")

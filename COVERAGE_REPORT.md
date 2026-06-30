@@ -1,6 +1,6 @@
 # Coverage Report (excl. main.rs)
 
-**1413** / **1629** lines covered — **86.74%**
+**1411** / **1629** lines covered — **86.62%**
 
 **Threshold:** 80% | **Status:** ✅ PASS
 
@@ -8,14 +8,13 @@
 | --- | --- | --- | --- | --- |
 | `aether-aggregator` | 7 | 372 | 430 | 86.5% |
 | `aether-auth` | 3 | 175 | 189 | 92.6% |
-| `aetherd` | 14 | 866 | 1010 | 85.7% |
+| `aetherd` | 14 | 864 | 1010 | 85.5% |
 
 ## `aether-aggregator`
 
 ### crates/aether-aggregator/tests/auction_convergence_timing.rs
 
 - Coverage: 🟡 **79.0%** (83/105 lines)
-
 - **Missed lines:**
   - Lines 43-45
   - Line 47
@@ -31,7 +30,6 @@
 ### crates/aether-aggregator/tests/deterministic_scheduling_selection.rs
 
 - Coverage: 🟡 **81.8%** (99/121 lines)
-
 - **Missed lines:**
   - Lines 40-42
   - Line 44
@@ -47,7 +45,6 @@
 ### crates/aether-aggregator/src/scheduler.rs
 
 - Coverage: 🟡 **88.1%** (59/67 lines)
-
 - **Missed lines:**
   - Lines 82-84
   - Line 115
@@ -58,7 +55,6 @@
 ### crates/aether-aggregator/src/tie_breaker.rs
 
 - Coverage: 🟢 **92.1%** (35/38 lines)
-
 - **Missed lines:**
   - Line 48
   - Lines 51-52
@@ -66,7 +62,6 @@
 ### crates/aether-aggregator/tests/heartbeat_timeout_tests.rs
 
 - Coverage: 🟢 **94.3%** (50/53 lines)
-
 - **Missed lines:**
   - Line 34
   - Line 44
@@ -76,18 +71,15 @@
 
 - Coverage: 🟢 **100.0%** (20/20 lines)
 
-
 ### crates/aether-aggregator/src/registry.rs
 
 - Coverage: 🟢 **100.0%** (26/26 lines)
-
 
 ## `aether-auth`
 
 ### crates/aether-auth/tests/mtls_integration_tests.rs
 
 - Coverage: 🟡 **86.7%** (85/98 lines)
-
 - **Missed lines:**
   - Lines 35-37
   - Lines 39-44
@@ -99,7 +91,6 @@
 ### crates/aether-auth/src/token.rs
 
 - Coverage: 🟢 **97.8%** (45/46 lines)
-
 - **Missed lines:**
   - Line 56
 
@@ -107,13 +98,11 @@
 
 - Coverage: 🟢 **100.0%** (45/45 lines)
 
-
 ## `aetherd`
 
 ### crates/aetherd/src/cloud_init.rs
 
 - Coverage: 🔴 **67.6%** (48/71 lines)
-
 - **Missed lines:**
   - Line 53
   - Lines 57-58
@@ -126,21 +115,20 @@
 
 ### crates/aetherd/src/hypervisor/firecracker.rs
 
-- Coverage: 🟡 **74.2%** (66/89 lines)
-
+- Coverage: 🟡 **71.9%** (64/89 lines)
 - **Missed lines:**
   - Line 138
   - Lines 158-174
   - Line 177
   - Line 184
   - Line 213
+  - Lines 235-236
   - Line 262
   - Line 273
 
 ### crates/aetherd/src/hypervisor/qemu.rs
 
 - Coverage: 🟡 **76.6%** (105/137 lines)
-
 - **Missed lines:**
   - Line 67
   - Line 125
@@ -162,7 +150,6 @@
 ### crates/aetherd/tests/cloud_init_iso_guest_boot.rs
 
 - Coverage: 🟡 **77.4%** (24/31 lines)
-
 - **Missed lines:**
   - Line 25
   - Line 42
@@ -171,7 +158,6 @@
 ### crates/aetherd/src/telemetry.rs
 
 - Coverage: 🟡 **79.0%** (83/105 lines)
-
 - **Missed lines:**
   - Line 151
   - Line 153
@@ -187,7 +173,6 @@
 ### crates/aetherd/src/lib.rs
 
 - Coverage: 🟡 **81.1%** (77/95 lines)
-
 - **Missed lines:**
   - Line 146
   - Lines 178-181
@@ -202,7 +187,6 @@
 ### crates/aetherd/src/bidder.rs
 
 - Coverage: 🟡 **89.3%** (25/28 lines)
-
 - **Missed lines:**
   - Line 49
   - Line 62
@@ -211,7 +195,6 @@
 ### crates/aetherd/tests/firecracker_vm_boot_lifecycle.rs
 
 - Coverage: 🟡 **89.5%** (34/38 lines)
-
 - **Missed lines:**
   - Line 24
   - Line 30
@@ -221,7 +204,6 @@
 ### crates/aetherd/tests/node_tests.rs
 
 - Coverage: 🟢 **93.9%** (168/179 lines)
-
 - **Missed lines:**
   - Line 33
   - Line 50
@@ -238,26 +220,21 @@
 ### crates/aetherd/tests/vsock_stream_performance.rs
 
 - Coverage: 🟢 **98.4%** (60/61 lines)
-
 - **Missed lines:**
   - Line 93
-
-### crates/aetherd/tests/bidding_resource_thresholds.rs
-
-- Coverage: 🟢 **100.0%** (34/34 lines)
-
-
-### crates/aetherd/tests/host_system_metrics_query.rs
-
-- Coverage: 🟢 **100.0%** (15/15 lines)
-
-
-### crates/aetherd/tests/qemu_kvm_vm_lifecycle.rs
-
-- Coverage: 🟢 **100.0%** (48/48 lines)
-
 
 ### crates/aetherd/src/vsock.rs
 
 - Coverage: 🟢 **100.0%** (79/79 lines)
 
+### crates/aetherd/tests/bidding_resource_thresholds.rs
+
+- Coverage: 🟢 **100.0%** (34/34 lines)
+
+### crates/aetherd/tests/host_system_metrics_query.rs
+
+- Coverage: 🟢 **100.0%** (15/15 lines)
+
+### crates/aetherd/tests/qemu_kvm_vm_lifecycle.rs
+
+- Coverage: 🟢 **100.0%** (48/48 lines)
