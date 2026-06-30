@@ -36,8 +36,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         b"supersecretkeyforauthsupersecretkeyforauth".to_vec(),
     ));
 
+    let pool = "COMPUTE".to_string();
+    let telemetry_collector = Arc::new(aetherd::telemetry::TelemetryCollector::new(
+        aetherd::telemetry::TelemetryConfig::default(),
+    ));
+    let bidder = Arc::new(aetherd::bidder::Bidder::new(
+        aetherd::bidder::BidderConfig::default(),
+    ));
+
     // Expose Node Daemon Server API
-    let daemon_service = AetherNodeImpl::new(node_id.clone(), token_manager.clone());
+    let daemon_service = AetherNodeImpl::new(
+        node_id.clone(),
+        pool.clone(),
+        token_manager.clone(),
+        telemetry_collector,
+        bidder,
+    );
 
     println!("Starting Aether Node Daemon on {local_addr}");
     let server_handle = tokio::spawn(async move {

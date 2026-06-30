@@ -85,3 +85,22 @@ message VMDetails {
 message ListVMsResponse {
     repeated VMDetails vms = 1;
 }
+
+message TelemetryReport {
+    string node_id = 1;
+    double load_one = 2;
+    double load_five = 3;
+    double load_fifteen = 4;
+    uint64 mem_total = 5;
+    uint64 mem_available = 6;
+    uint64 disk_total = 7;
+    uint64 disk_available = 8;
+    double nvme_temp = 9;
+    uint32 cpu_cores = 10;
+}
+
+message ControlRequest {
+    string command = 1;
+    string target = 2;
+}
+

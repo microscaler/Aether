@@ -30,6 +30,11 @@ pub fn create_client_tls_config(
         .domain_name(domain_name)
 }
 
+/// Loads a PEM-formatted certificate or private key from the given file path.
+pub fn load_pem<P: AsRef<std::path::Path>>(path: P) -> Result<Vec<u8>, std::io::Error> {
+    std::fs::read(path)
+}
+
 /// Dynamic test helper module for generating self-signed certificates.
 pub mod test_pki {
     use rcgen::{CertificateParams, DnType, IsCa, Issuer, KeyPair, SanType};
@@ -119,5 +124,21 @@ mod tests {
             &creds.client_key,
             "localhost",
         );
+    }
+
+    #[test]
+    fn test_load_pem_success() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("test_cert.pem");
+        std::fs::write(&file_path, b"test PEM content").unwrap();
+
+        let content = load_pem(&file_path).unwrap();
+        assert_eq!(content, b"test PEM content");
+    }
+
+    #[test]
+    fn test_load_pem_nonexistent() {
+        let res = load_pem("nonexistent_file_path.pem");
+        assert!(res.is_err());
     }
 }

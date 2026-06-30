@@ -23,46 +23,56 @@ impl TokenManager {
     }
 
     /// Generates a signed token for a given node_id.
-    /// Returns a string formatted as "node_id:timestamp:signature".
+    /// Returns a string formatted as "node_id:timestamp:nonce:signature".
     pub fn generate_token(&self, node_id: &str) -> Result<String, String> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|e| e.to_string())?
-            .as_secs();
-        let payload = format!("{node_id}:{now}");
+            .map_err(|e| e.to_string())?;
+        let now_secs = now.as_secs();
+        let now_nanos = now.subsec_nanos();
+        let payload = format!("{node_id}:{now_secs}:{now_nanos}");
         let mut mac = HmacSha256::new_from_slice(&self.secret).map_err(|e| e.to_string())?;
         mac.update(payload.as_bytes());
         let signature = hex::encode(mac.finalize().into_bytes());
-        Ok(format!("{node_id}:{now}:{signature}"))
+        Ok(format!("{node_id}:{now_secs}:{now_nanos}:{signature}"))
     }
 
     /// Validates a token signature, verifies node ID, checks 60s expiration, and detects replay attacks.
     pub fn validate_token(&self, token: &str, expected_node_id: &str) -> Result<(), String> {
-        let parts: Vec<&str> = token.split(':').collect();
-        if parts.len() != 3 {
+        let mut parts = token.split(':');
+        let node_id = parts
+            .next()
+            .ok_or_else(|| "Malformed token format".to_string())?;
+        let timestamp_str = parts
+            .next()
+            .ok_or_else(|| "Malformed token format".to_string())?;
+        let nonce_str = parts
+            .next()
+            .ok_or_else(|| "Malformed token format".to_string())?;
+        let signature = parts
+            .next()
+            .ok_or_else(|| "Malformed token format".to_string())?;
+        if parts.next().is_some() {
             return Err("Malformed token format".to_string());
         }
-        let node_id = parts[0];
-        let timestamp_str = parts[1];
-        let signature = parts[2];
 
         if node_id != expected_node_id {
             return Err("Token node_id mismatch".to_string());
         }
 
-        let now = SystemTime::now()
+        let now_secs = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| e.to_string())?
             .as_secs();
         let timestamp = timestamp_str.parse::<u64>().map_err(|e| e.to_string())?;
 
         // Expiration check: tokens expire after 60 seconds
-        if now < timestamp || now > timestamp + 60 {
+        if now_secs < timestamp || now_secs > timestamp + 60 {
             return Err("Token expired or invalid timestamp".to_string());
         }
 
         // Validate signature
-        let payload = format!("{node_id}:{timestamp_str}");
+        let payload = format!("{node_id}:{timestamp_str}:{nonce_str}");
         let mut mac = HmacSha256::new_from_slice(&self.secret).map_err(|e| e.to_string())?;
         mac.update(payload.as_bytes());
         let expected_signature = hex::encode(mac.finalize().into_bytes());
@@ -81,7 +91,7 @@ impl TokenManager {
         seen.insert(signature.to_string(), timestamp);
 
         // Prune old entries to prevent memory leaks (older than 60s)
-        let cutoff = now.saturating_sub(60);
+        let cutoff = now_secs.saturating_sub(60);
         seen.retain(|_, ts| *ts >= cutoff);
 
         Ok(())
@@ -136,12 +146,12 @@ mod tests {
             .unwrap()
             .as_secs();
         let past_time = now - 100;
-        let payload = format!("{node_id}:{past_time}");
+        let payload = format!("{node_id}:{past_time}:12345");
 
         let mut mac = HmacSha256::new_from_slice(&manager.secret).unwrap();
         mac.update(payload.as_bytes());
         let signature = hex::encode(mac.finalize().into_bytes());
-        let expired_token = format!("{node_id}:{past_time}:{signature}");
+        let expired_token = format!("{node_id}:{past_time}:12345:{signature}");
 
         assert_eq!(
             manager.validate_token(&expired_token, node_id).unwrap_err(),
@@ -156,8 +166,8 @@ mod tests {
         let node_id = "blade-01";
         let token = manager.generate_token(node_id).unwrap();
         let mut parts: Vec<&str> = token.split(':').collect();
-        parts[2] = "invalid_signature_hex_code_123456";
-        let tampered_token = format!("{}:{}:{}", parts[0], parts[1], parts[2]);
+        parts[3] = "invalid_signature_hex_code_123456";
+        let tampered_token = format!("{}:{}:{}:{}", parts[0], parts[1], parts[2], parts[3]);
 
         assert!(manager.validate_token(&tampered_token, node_id).is_err());
     }
@@ -175,7 +185,9 @@ mod tests {
             "Malformed token format"
         );
         assert_eq!(
-            manager.validate_token("part1:part2", node_id).unwrap_err(),
+            manager
+                .validate_token("part1:part2:part3", node_id)
+                .unwrap_err(),
             "Malformed token format"
         );
     }
@@ -187,7 +199,7 @@ mod tests {
         let node_id = "blade-01";
 
         assert!(manager
-            .validate_token("blade-01:not_a_number:signature", node_id)
+            .validate_token("blade-01:not_a_number:12345:signature", node_id)
             .is_err());
     }
 
@@ -203,12 +215,12 @@ mod tests {
             .unwrap()
             .as_secs();
         let future_time = now + 100;
-        let payload = format!("{node_id}:{future_time}");
+        let payload = format!("{node_id}:{future_time}:12345");
 
         let mut mac = HmacSha256::new_from_slice(&manager.secret).unwrap();
         mac.update(payload.as_bytes());
         let signature = hex::encode(mac.finalize().into_bytes());
-        let future_token = format!("{node_id}:{future_time}:{signature}");
+        let future_token = format!("{node_id}:{future_time}:12345:{signature}");
 
         assert_eq!(
             manager.validate_token(&future_token, node_id).unwrap_err(),

@@ -79,20 +79,27 @@ pub struct DiskInfo {
     pub available_bytes: u64,
 }
 
-/// Parses the system loadavg file.
 pub fn parse_loadavg(path: &str) -> Result<LoadAvg, String> {
     let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let parts: Vec<&str> = content.split_whitespace().collect();
-    if parts.len() < 3 {
-        return Err("Malformed loadavg content".to_string());
-    }
-    let one = parts[0].parse::<f64>().map_err(|e| e.to_string())?;
-    let five = parts[1].parse::<f64>().map_err(|e| e.to_string())?;
-    let fifteen = parts[2].parse::<f64>().map_err(|e| e.to_string())?;
+    let mut parts = content.split_whitespace();
+    let one = parts
+        .next()
+        .ok_or("Malformed loadavg content")?
+        .parse::<f64>()
+        .map_err(|e| e.to_string())?;
+    let five = parts
+        .next()
+        .ok_or("Malformed loadavg content")?
+        .parse::<f64>()
+        .map_err(|e| e.to_string())?;
+    let fifteen = parts
+        .next()
+        .ok_or("Malformed loadavg content")?
+        .parse::<f64>()
+        .map_err(|e| e.to_string())?;
     Ok(LoadAvg { one, five, fifteen })
 }
 
-/// Parses the system meminfo file.
 pub fn parse_meminfo(path: &str) -> Result<MemoryInfo, String> {
     let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     let mut total = None;
@@ -100,17 +107,19 @@ pub fn parse_meminfo(path: &str) -> Result<MemoryInfo, String> {
     let mut free = None;
 
     for line in content.lines() {
-        let parts: Vec<&str> = line.split(':').collect();
-        if parts.len() != 2 {
-            continue;
-        }
-        let key = parts[0].trim();
-        let val_str = parts[1].trim();
-        let val_parts: Vec<&str> = val_str.split_whitespace().collect();
-        if val_parts.is_empty() {
-            continue;
-        }
-        let val = val_parts[0].parse::<u64>().map_err(|e| e.to_string())? * 1024; // convert kB to bytes
+        let mut parts = line.splitn(2, ':');
+        let key = match parts.next() {
+            Some(k) => k.trim(),
+            None => continue,
+        };
+        let val_str = match parts.next() {
+            Some(v) => v.trim(),
+            None => continue,
+        };
+        let val = match val_str.split_whitespace().next() {
+            Some(v) => v.parse::<u64>().map_err(|e| e.to_string())? * 1024,
+            None => continue,
+        };
 
         if key == "MemTotal" {
             total = Some(val);
@@ -132,7 +141,6 @@ pub fn parse_meminfo(path: &str) -> Result<MemoryInfo, String> {
     })
 }
 
-/// Obtains disk metrics by running POSIX `df` command (safe, no unsafe blocks).
 pub fn get_disk_space(mount_point: &str) -> Result<DiskInfo, String> {
     let output = std::process::Command::new("df")
         .args(["-k", mount_point])
@@ -153,15 +161,22 @@ pub fn get_disk_space(mount_point: &str) -> Result<DiskInfo, String> {
     let data_line = lines
         .next()
         .ok_or_else(|| "Missing data line in df output".to_string())?;
-    let parts: Vec<&str> = data_line.split_whitespace().collect();
+    let mut parts = data_line.split_whitespace();
+    let _filesystem = parts
+        .next()
+        .ok_or_else(|| "Missing filesystem".to_string())?;
+    let total_kb_str = parts
+        .next()
+        .ok_or_else(|| "Missing total blocks".to_string())?;
+    let _used = parts
+        .next()
+        .ok_or_else(|| "Missing used blocks".to_string())?;
+    let available_kb_str = parts
+        .next()
+        .ok_or_else(|| "Missing available blocks".to_string())?;
 
-    if parts.len() < 4 {
-        return Err(format!("Malformed df output line: {}", data_line));
-    }
-
-    // POSIX df output fields: Filesystem, 1024-blocks, Used, Available
-    let total_kb = parts[1].parse::<u64>().map_err(|e| e.to_string())?;
-    let available_kb = parts[3].parse::<u64>().map_err(|e| e.to_string())?;
+    let total_kb = total_kb_str.parse::<u64>().map_err(|e| e.to_string())?;
+    let available_kb = available_kb_str.parse::<u64>().map_err(|e| e.to_string())?;
 
     Ok(DiskInfo {
         total_bytes: total_kb * 1024,
@@ -169,7 +184,6 @@ pub fn get_disk_space(mount_point: &str) -> Result<DiskInfo, String> {
     })
 }
 
-/// Reads the NVMe controller temperature.
 pub fn get_nvme_temp(path: &str) -> Result<f64, String> {
     if let Ok(content) = std::fs::read_to_string(path) {
         if let Ok(milli) = content.trim().parse::<f64>() {
@@ -187,9 +201,10 @@ pub fn get_nvme_temp(path: &str) -> Result<f64, String> {
             let out_str = String::from_utf8_lossy(&out.stdout);
             for line in out_str.lines() {
                 if line.to_lowercase().contains("temperature") {
-                    let parts: Vec<&str> = line.split(':').collect();
-                    if parts.len() == 2 {
-                        let temp_str = parts[1].trim().trim_end_matches('C').trim();
+                    let mut parts = line.splitn(2, ':');
+                    let _key = parts.next();
+                    if let Some(val_str) = parts.next() {
+                        let temp_str = val_str.trim().trim_end_matches('C').trim();
                         if let Ok(temp) = temp_str.parse::<f64>() {
                             return Ok(temp);
                         }

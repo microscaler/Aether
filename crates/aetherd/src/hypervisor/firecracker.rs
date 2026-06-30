@@ -69,6 +69,19 @@ pub struct FirecrackerConfig {
     pub network_interfaces: Vec<NetworkInterface>,
 }
 
+/// Configuration for the Firecracker jailer sandbox.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct JailerConfig {
+    /// UID that Firecracker will run as.
+    pub uid: u32,
+    /// GID that Firecracker will run as.
+    pub gid: u32,
+    /// Directory where the chroot jail will be built.
+    pub chroot_base_dir: String,
+    /// NUMA node index where the process will be pinned.
+    pub node_index: u32,
+}
+
 /// Hypervisor implementation managing a single Firecracker microVM process.
 pub struct FirecrackerHypervisor {
     /// Unique identifier for the microVM instance.
@@ -83,6 +96,8 @@ pub struct FirecrackerHypervisor {
     pub config: FirecrackerConfig,
     /// Optional command arguments override for testing/mocking.
     pub extra_args: Vec<String>,
+    /// Optional jailer sandbox configuration.
+    pub jailer_config: Option<JailerConfig>,
 }
 
 impl FirecrackerHypervisor {
@@ -101,6 +116,7 @@ impl FirecrackerHypervisor {
             log_path,
             config,
             extra_args: Vec::new(),
+            jailer_config: None,
         }
     }
 
@@ -139,19 +155,45 @@ impl Hypervisor for FirecrackerHypervisor {
 
         // Setup process execution arguments
         let args = if self.extra_args.is_empty() {
-            vec!["--config-file".to_string(), self.config_path.clone()]
+            if let Some(ref jc) = self.jailer_config {
+                vec![
+                    "--id".to_string(),
+                    self.id.clone(),
+                    "--node".to_string(),
+                    jc.node_index.to_string(),
+                    "--exec-file".to_string(),
+                    self.bin_path.clone(),
+                    "--uid".to_string(),
+                    jc.uid.to_string(),
+                    "--gid".to_string(),
+                    jc.gid.to_string(),
+                    "--chroot-base-dir".to_string(),
+                    jc.chroot_base_dir.clone(),
+                    "--".to_string(),
+                    "--config-file".to_string(),
+                    self.config_path.clone(),
+                ]
+            } else {
+                vec!["--config-file".to_string(), self.config_path.clone()]
+            }
         } else {
             self.extra_args.clone()
         };
 
-        let mut cmd = tokio::process::Command::new(&self.bin_path);
+        let cmd_bin = if self.jailer_config.is_some() {
+            "jailer"
+        } else {
+            &self.bin_path
+        };
+
+        let mut cmd = tokio::process::Command::new(cmd_bin);
         cmd.args(&args)
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_stderr));
 
         let child = cmd
             .spawn()
-            .map_err(|e| format!("Failed to spawn child process '{}': {}", self.bin_path, e))?;
+            .map_err(|e| format!("Failed to spawn child process '{}': {}", cmd_bin, e))?;
 
         let pid = child
             .id()
@@ -296,5 +338,33 @@ mod tests {
 
         hypervisor.stop().await.unwrap();
         assert_eq!(hypervisor.query_status().await.unwrap(), "STOPPED");
+    }
+
+    #[test]
+    fn test_jailer_config_args() {
+        let config = get_sample_config();
+        let mut hypervisor = FirecrackerHypervisor::new(
+            "test-vm".to_string(),
+            "/usr/bin/firecracker".to_string(),
+            "vm.json".to_string(),
+            "vm.log".to_string(),
+            config,
+        );
+
+        let jc = JailerConfig {
+            uid: 1000,
+            gid: 1000,
+            chroot_base_dir: "/srv/jailer".to_string(),
+            node_index: 0,
+        };
+        hypervisor.jailer_config = Some(jc);
+
+        assert_eq!(hypervisor.id, "test-vm");
+        assert_eq!(hypervisor.bin_path, "/usr/bin/firecracker");
+        assert_eq!(hypervisor.jailer_config.as_ref().unwrap().uid, 1000);
+        assert_eq!(
+            hypervisor.jailer_config.as_ref().unwrap().chroot_base_dir,
+            "/srv/jailer"
+        );
     }
 }

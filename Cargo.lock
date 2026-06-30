@@ -28,6 +28,7 @@ dependencies = [
  "rcgen",
  "serde",
  "sha2",
+ "tempfile",
  "tokio",
  "tonic",
  "tonic-prost",
