@@ -26,3 +26,15 @@ setup-hooks:
 # Run pre-commit on all files
 qa:
 	pre-commit run --all-files
+
+# ==========================================
+# Coverage
+# ==========================================
+
+# Run coverage check (tarpaulin + markdown report + threshold)
+coverage:
+	hack/cargo-coverage.sh
+
+# Update coverage baseline
+coverage-update:
+	hack/cargo-coverage.sh --update-baseline
