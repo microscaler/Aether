@@ -1,0 +1,30 @@
+# Pre-commit hooks for Aether (Rust workspace)
+# Install: pre-commit install --install-hooks
+
+default_install_hook_types: [pre-commit]
+
+repos:
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt (check)
+        entry: cargo fmt -- --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy --workspace --all-targets -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+        require_serial: true
+
+      - id: cargo-nextest
+        name: cargo nextest
+        entry: cargo nextest run --workspace --all-targets
+        language: system
+        types: [rust]
+        pass_filenames: false
+        require_serial: true
