@@ -61,6 +61,11 @@ def parse_cobertura(path: Path) -> dict:
     return {"stats": stats, "packages": packages}
 
 
+def is_main_rs(filepath: str) -> bool:
+    """Return True if the file path ends with main.rs."""
+    return Path(filepath).name == "main.rs"
+
+
 def extract_crate(filepath: str) -> str:
     """Extract the crate name from the file path, e.g. 'crates/aetherd/src/...' -> 'aetherd'."""
     parts = Path(filepath).parts
@@ -79,26 +84,36 @@ def main():
         sys.exit(1)
 
     data = parse_cobertura(COBERTURA)
-    stats = data["stats"]
     packages = data["packages"]
 
-    # Group by crate
-    crates: dict[str, list] = {}
+    # Filter out main.rs files before computing stats
+    classes = []
     for pkg in packages:
         for cls in pkg["classes"]:
-            crate = extract_crate(cls["filename"])
-            crates.setdefault(crate, []).append(cls)
+            if not is_main_rs(cls["filename"]):
+                classes.append(cls)
+
+    # Compute stats from filtered classes
+    total_covered = sum(c["lines_covered"] for c in classes)
+    total_valid = sum(c["lines_total"] for c in classes)
+    percent = round(total_covered / total_valid * 100, 2) if total_valid else 0
+
+    # Group by crate (from filtered classes)
+    crates: dict[str, list] = {}
+    for cls in classes:
+        crate = extract_crate(cls["filename"])
+        crates.setdefault(crate, []).append(cls)
 
     # Build markdown
     lines = []
-    lines.append("# Coverage Report\n")
-    lines.append(f"**{stats['lines_covered']}** / **{stats['lines_valid']}** lines covered — **{stats['percent']}%**\n")
+    lines.append("# Coverage Report (excl. main.rs)\n")
+    lines.append(f"**{total_covered}** / **{total_valid}** lines covered — **{percent}%**\n")
 
     # Threshold check
     with open(BASE_DIR / ".coverage-baseline.json") as f:
         baseline = json.load(f)
     threshold = baseline.get("threshold", 80)
-    status = "PASS" if stats["percent"] >= threshold else "FAIL"
+    status = "PASS" if percent >= threshold else "FAIL"
     emoji = "✅" if status == "PASS" else "❌"
     lines.append(f"**Threshold:** {threshold}% | **Status:** {emoji} {status}\n")
 
@@ -160,7 +175,7 @@ def main():
     markdown = "\n".join(lines)
     OUTPUT.write_text(markdown)
     print(f"Coverage report written to {OUTPUT}")
-    print(f"  {stats['lines_covered']}/{stats['lines_valid']} lines ({stats['percent']}%)")
+    print(f"  {total_covered}/{total_valid} lines ({percent}%)")
     print(f"  Status: {status}")
 
 

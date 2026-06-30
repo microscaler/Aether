@@ -1,32 +1,16 @@
-# Coverage Report
+# Coverage Report (excl. main.rs)
 
-**1413** / **1698** lines covered — **83.22%**
+**1413** / **1629** lines covered — **86.74%**
 
 **Threshold:** 80% | **Status:** ✅ PASS
 
 | Crate | Files | Covered | Total | Coverage |
 | --- | --- | --- | --- | --- |
-| `aether-aggregator` | 8 | 372 | 454 | 81.9% |
+| `aether-aggregator` | 7 | 372 | 430 | 86.5% |
 | `aether-auth` | 3 | 175 | 189 | 92.6% |
-| `aether-fence` | 1 | 0 | 2 | 0.0% |
-| `aetherd` | 15 | 866 | 1053 | 82.2% |
+| `aetherd` | 14 | 866 | 1010 | 85.7% |
 
 ## `aether-aggregator`
-
-### crates/aether-aggregator/src/main.rs
-
-- Coverage: 🔴 **0.0%** (0/24 lines)
-
-- **Missed lines:**
-  - Lines 19-22
-  - Lines 25-26
-  - Lines 29-30
-  - Line 32
-  - Lines 35-37
-  - Lines 39-43
-  - Line 48
-  - Lines 50-54
-  - Line 56
 
 ### crates/aether-aggregator/tests/auction_convergence_timing.rs
 
@@ -124,38 +108,7 @@
 - Coverage: 🟢 **100.0%** (45/45 lines)
 
 
-## `aether-fence`
-
-### crates/aether-fence/src/main.rs
-
-- Coverage: 🔴 **0.0%** (0/2 lines)
-
-- **Missed lines:**
-  - Lines 7-8
-
 ## `aetherd`
-
-### crates/aetherd/src/main.rs
-
-- Coverage: 🔴 **0.0%** (0/43 lines)
-
-- **Missed lines:**
-  - Lines 20-23
-  - Line 25
-  - Lines 27-29
-  - Line 32
-  - Lines 35-36
-  - Lines 39-41
-  - Lines 43-44
-  - Lines 49-53
-  - Lines 56-63
-  - Line 67
-  - Lines 70-71
-  - Line 73
-  - Lines 75-80
-  - Line 82
-  - Line 84
-  - Lines 87-88
 
 ### crates/aetherd/src/cloud_init.rs
 
@@ -289,11 +242,6 @@
 - **Missed lines:**
   - Line 93
 
-### crates/aetherd/src/vsock.rs
-
-- Coverage: 🟢 **100.0%** (79/79 lines)
-
-
 ### crates/aetherd/tests/bidding_resource_thresholds.rs
 
 - Coverage: 🟢 **100.0%** (34/34 lines)
@@ -307,4 +255,9 @@
 ### crates/aetherd/tests/qemu_kvm_vm_lifecycle.rs
 
 - Coverage: 🟢 **100.0%** (48/48 lines)
+
+
+### crates/aetherd/src/vsock.rs
+
+- Coverage: 🟢 **100.0%** (79/79 lines)
 
