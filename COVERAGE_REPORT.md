@@ -1,75 +1,16 @@
 # Coverage Report (excl. main.rs)
 
-**2593** / **2911** lines covered — **89.08%**
+**2636** / **2911** lines covered — **90.55%**
 
 **Threshold:** 80% | **Status:** ✅ PASS
 
 | Crate | Files | Covered | Total | Coverage |
 | --- | --- | --- | --- | --- |
-| `aether-aggregator` | 11 | 1350 | 1509 | 89.5% |
+| `aether-aggregator` | 11 | 1390 | 1509 | 92.1% |
 | `aether-auth` | 3 | 175 | 189 | 92.6% |
-| `aetherd` | 18 | 1068 | 1213 | 88.0% |
+| `aetherd` | 18 | 1071 | 1213 | 88.3% |
 
 ## `aether-aggregator`
-
-### crates/aether-aggregator/src/storage/csi.rs
-
-- Coverage: 🟡 **76.7%** (181/236 lines)
-- **Missed lines:**
-  - Line 118
-  - Lines 154-155
-  - Line 157
-  - Line 160
-  - Line 202
-  - Line 225
-  - Line 228
-  - Line 246
-  - Line 258
-  - Line 280
-  - Line 285
-  - Line 340
-  - Line 344
-  - Line 348
-  - Line 355
-  - Line 361
-  - Line 366
-  - Line 370
-  - Line 373
-  - Line 377
-  - Line 380
-  - Line 384
-  - Line 387
-  - Line 391
-  - Line 394
-  - Line 398
-  - Line 403
-  - Line 407
-  - Line 412
-  - Line 416
-  - Line 430
-  - Line 433
-  - Line 458
-  - Line 465
-  - Line 469
-  - Line 476
-  - Line 488
-  - Line 491
-  - Line 508
-  - Line 512
-  - Line 526
-  - Line 529
-  - Line 550
-  - Line 554
-  - Line 558
-  - Line 565
-  - Line 577
-  - Line 580
-  - Line 597
-  - Line 601
-  - Line 609
-  - Line 613
-  - Line 618
-  - Line 622
 
 ### crates/aether-aggregator/tests/auction_convergence_timing.rs
 
@@ -159,6 +100,26 @@
   - Line 383
   - Line 394
   - Line 405
+
+### crates/aether-aggregator/src/storage/csi.rs
+
+- Coverage: 🟢 **93.6%** (221/236 lines)
+- **Missed lines:**
+  - Line 157
+  - Line 458
+  - Line 465
+  - Line 469
+  - Line 508
+  - Line 512
+  - Line 550
+  - Line 554
+  - Line 558
+  - Line 597
+  - Line 601
+  - Line 609
+  - Line 613
+  - Line 618
+  - Line 622
 
 ### crates/aether-aggregator/tests/heartbeat_timeout_tests.rs
 
@@ -313,15 +274,6 @@
   - Line 37
   - Line 53
 
-### crates/aetherd/src/hypervisor/firecracker.rs
-
-- Coverage: 🟢 **93.4%** (85/91 lines)
-- **Missed lines:**
-  - Lines 178-179
-  - Line 183
-  - Lines 241-242
-  - Line 279
-
 ### crates/aetherd/tests/node_tests.rs
 
 - Coverage: 🟢 **93.9%** (168/179 lines)
@@ -345,6 +297,13 @@
   - Line 18
   - Line 39
   - Line 67
+
+### crates/aetherd/src/hypervisor/firecracker.rs
+
+- Coverage: 🟢 **96.7%** (88/91 lines)
+- **Missed lines:**
+  - Lines 178-179
+  - Line 183
 
 ### crates/aetherd/tests/vlan_isolation_verification.rs
 

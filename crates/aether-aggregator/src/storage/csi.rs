@@ -651,3 +651,817 @@ impl Node for AetherCsiDriver {
         }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aether_auth::csi::{
+        volume_capability, CapacityRange, ControllerExpandVolumeRequest,
+        ControllerGetCapabilitiesRequest, ControllerGetVolumeRequest, ControllerModifyVolumeRequest,
+        ControllerPublishVolumeRequest, ControllerUnpublishVolumeRequest, CreateSnapshotRequest,
+        CreateVolumeRequest, DeleteSnapshotRequest, DeleteVolumeRequest, GetCapacityRequest,
+        GetSnapshotRequest, ListSnapshotsRequest, ListVolumesRequest,
+        NodeGetCapabilitiesRequest, NodeGetInfoRequest, NodePublishVolumeRequest,
+        NodeStageVolumeRequest, NodeUnpublishVolumeRequest, NodeUnstageVolumeRequest,
+        ValidateVolumeCapabilitiesRequest, VolumeCapability,
+    };
+    use std::path::Path;
+    use tonic::Code;
+
+    fn make_driver() -> AetherCsiDriver {
+        AetherCsiDriver::new("test-node".to_string())
+    }
+
+    // ====== create_volume error paths ======
+
+    #[tokio::test]
+    async fn test_create_volume_empty_name() {
+        let driver = make_driver();
+        let res = Controller::create_volume(
+            &driver,
+            Request::new(CreateVolumeRequest {
+                name: "".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn test_create_volume_default_capacity() {
+        let driver = make_driver();
+        let res = Controller::create_volume(
+            &driver,
+            Request::new(CreateVolumeRequest {
+                name: "default-cap-vol".to_string(),
+                capacity_range: None,
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+        let vol = res.volume.unwrap();
+        // Should get 10 GiB default (line 160)
+        assert_eq!(vol.capacity_bytes, 10 * 1024 * 1024 * 1024);
+    }
+
+    #[tokio::test]
+    async fn test_create_volume_limit_bytes_fallback() {
+        let driver = make_driver();
+        let res = Controller::create_volume(
+            &driver,
+            Request::new(CreateVolumeRequest {
+                name: "limit-fallback-vol".to_string(),
+                capacity_range: Some(CapacityRange {
+                    required_bytes: 0,
+                    limit_bytes: 2 * 1024 * 1024 * 1024,
+                }),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+        let vol = res.volume.unwrap();
+        // Should get limit_bytes when required_bytes is 0 (lines 154-155)
+        assert_eq!(vol.capacity_bytes, 2 * 1024 * 1024 * 1024);
+    }
+
+    // ====== delete_volume error paths ======
+
+    #[tokio::test]
+    async fn test_delete_volume_empty_id() {
+        let driver = make_driver();
+        let res = Controller::delete_volume(
+            &driver,
+            Request::new(DeleteVolumeRequest {
+                volume_id: "".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn test_delete_volume_nonexistent() {
+        let driver = make_driver();
+        // Should succeed even for non-existent volume (silently no-op)
+        let res = Controller::delete_volume(
+            &driver,
+            Request::new(DeleteVolumeRequest {
+                volume_id: "vol-does-not-exist".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_ok());
+    }
+
+    // ====== controller_publish_volume error paths ======
+
+    #[tokio::test]
+    async fn test_controller_publish_empty_volume_id() {
+        let driver = make_driver();
+        let res = Controller::controller_publish_volume(
+            &driver,
+            Request::new(ControllerPublishVolumeRequest {
+                volume_id: "".to_string(),
+                node_id: "node-1".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn test_controller_publish_empty_node_id() {
+        let driver = make_driver();
+        let res = Controller::controller_publish_volume(
+            &driver,
+            Request::new(ControllerPublishVolumeRequest {
+                volume_id: "vol-123".to_string(),
+                node_id: "".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn test_controller_publish_not_found() {
+        let driver = make_driver();
+        let res = Controller::controller_publish_volume(
+            &driver,
+            Request::new(ControllerPublishVolumeRequest {
+                volume_id: "nonexistent-vol".to_string(),
+                node_id: "node-1".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::NotFound);
+    }
+
+    // ====== controller_unpublish_volume error paths ======
+
+    #[tokio::test]
+    async fn test_controller_unpublish_empty_volume_id() {
+        let driver = make_driver();
+        let res = Controller::controller_unpublish_volume(
+            &driver,
+            Request::new(ControllerUnpublishVolumeRequest {
+                volume_id: "".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::InvalidArgument);
+    }
+
+    // ====== validate_volume_capabilities error paths ======
+
+    #[tokio::test]
+    async fn test_validate_empty_volume_id() {
+        let driver = make_driver();
+        let res = Controller::validate_volume_capabilities(
+            &driver,
+            Request::new(ValidateVolumeCapabilitiesRequest {
+                volume_id: "".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn test_validate_not_found() {
+        let driver = make_driver();
+        let res = Controller::validate_volume_capabilities(
+            &driver,
+            Request::new(ValidateVolumeCapabilitiesRequest {
+                volume_id: "nonexistent".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::NotFound);
+    }
+
+    // ====== controller_get_capabilities ======
+
+    #[tokio::test]
+    async fn test_controller_get_capabilities() {
+        let driver = make_driver();
+        let res = Controller::controller_get_capabilities(
+            &driver,
+            Request::new(ControllerGetCapabilitiesRequest {}),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+        assert!(!res.capabilities.is_empty());
+    }
+
+    // ====== Snapshot methods (unimplemented) ======
+
+    #[tokio::test]
+    async fn test_create_snapshot_unimplemented() {
+        let driver = make_driver();
+        let res = Controller::create_snapshot(
+            &driver,
+            Request::new(CreateSnapshotRequest {
+                name: "snap-1".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::Unimplemented);
+    }
+
+    #[tokio::test]
+    async fn test_delete_snapshot_unimplemented() {
+        let driver = make_driver();
+        let res = Controller::delete_snapshot(
+            &driver,
+            Request::new(DeleteSnapshotRequest {
+                snapshot_id: "snap-1".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::Unimplemented);
+    }
+
+    #[tokio::test]
+    async fn test_list_snapshots_unimplemented() {
+        let driver = make_driver();
+        let res = Controller::list_snapshots(
+            &driver,
+            Request::new(ListSnapshotsRequest {
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::Unimplemented);
+    }
+
+    #[tokio::test]
+    async fn test_get_snapshot_unimplemented() {
+        let driver = make_driver();
+        let res = Controller::get_snapshot(
+            &driver,
+            Request::new(GetSnapshotRequest {
+                snapshot_id: "snap-1".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::Unimplemented);
+    }
+
+    // ====== Controller expand/modify/volume (unimplemented) ======
+
+    #[tokio::test]
+    async fn test_controller_expand_unimplemented() {
+        let driver = make_driver();
+        let res = Controller::controller_expand_volume(
+            &driver,
+            Request::new(ControllerExpandVolumeRequest {
+                volume_id: "vol-1".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::Unimplemented);
+    }
+
+    #[tokio::test]
+    async fn test_controller_get_volume_unimplemented() {
+        let driver = make_driver();
+        let res = Controller::controller_get_volume(
+            &driver,
+            Request::new(ControllerGetVolumeRequest {
+                volume_id: "vol-1".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::Unimplemented);
+    }
+
+    #[tokio::test]
+    async fn test_controller_modify_unimplemented() {
+        let driver = make_driver();
+        let res = Controller::controller_modify_volume(
+            &driver,
+            Request::new(ControllerModifyVolumeRequest {
+                volume_id: "vol-1".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::Unimplemented);
+    }
+
+    // ====== Node service error paths ======
+
+    #[tokio::test]
+    async fn test_node_stage_empty_volume_id() {
+        let driver = make_driver();
+        let res = Node::node_stage_volume(
+            &driver,
+            Request::new(NodeStageVolumeRequest {
+                volume_id: "".to_string(),
+                staging_target_path: "/tmp/stage".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn test_node_stage_empty_staging_path() {
+        let driver = make_driver();
+        let res = Node::node_stage_volume(
+            &driver,
+            Request::new(NodeStageVolumeRequest {
+                volume_id: "vol-1".to_string(),
+                staging_target_path: "".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn test_node_stage_not_found() {
+        let driver = make_driver();
+        let temp_path = std::env::temp_dir().join("csi-test-stage-not-found");
+        let stage_path = temp_path.to_string_lossy().to_string();
+        let res = Node::node_stage_volume(
+            &driver,
+            Request::new(NodeStageVolumeRequest {
+                volume_id: "nonexistent".to_string(),
+                staging_target_path: stage_path,
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::NotFound);
+    }
+
+    #[tokio::test]
+    async fn test_node_unstage_empty_volume_id() {
+        let driver = make_driver();
+        let res = Node::node_unstage_volume(
+            &driver,
+            Request::new(NodeUnstageVolumeRequest {
+                volume_id: "".to_string(),
+                staging_target_path: "/tmp/stage".to_string(),
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn test_node_unstage_empty_path() {
+        let driver = make_driver();
+        let res = Node::node_unstage_volume(
+            &driver,
+            Request::new(NodeUnstageVolumeRequest {
+                volume_id: "vol-1".to_string(),
+                staging_target_path: "".to_string(),
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn test_node_publish_empty_volume_id() {
+        let driver = make_driver();
+        let res = Node::node_publish_volume(
+            &driver,
+            Request::new(NodePublishVolumeRequest {
+                volume_id: "".to_string(),
+                target_path: "/tmp/publish".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn test_node_publish_empty_target_path() {
+        let driver = make_driver();
+        let res = Node::node_publish_volume(
+            &driver,
+            Request::new(NodePublishVolumeRequest {
+                volume_id: "vol-1".to_string(),
+                target_path: "".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn test_node_publish_not_found() {
+        let driver = make_driver();
+        let temp_path = std::env::temp_dir().join("csi-test-publish-not-found");
+        let target_path = temp_path.to_string_lossy().to_string();
+        let res = Node::node_publish_volume(
+            &driver,
+            Request::new(NodePublishVolumeRequest {
+                volume_id: "nonexistent".to_string(),
+                target_path,
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::NotFound);
+    }
+
+    // ====== Node unpublish error paths ======
+
+    #[tokio::test]
+    async fn test_node_unpublish_empty_volume_id() {
+        let driver = make_driver();
+        let res = Node::node_unpublish_volume(
+            &driver,
+            Request::new(NodeUnpublishVolumeRequest {
+                volume_id: "".to_string(),
+                target_path: "/tmp/publish".to_string(),
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn test_node_unpublish_empty_target_path() {
+        let driver = make_driver();
+        let res = Node::node_unpublish_volume(
+            &driver,
+            Request::new(NodeUnpublishVolumeRequest {
+                volume_id: "vol-1".to_string(),
+                target_path: "".to_string(),
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code(), Code::InvalidArgument);
+    }
+
+    // ====== Node get capabilities ======
+
+    #[tokio::test]
+    async fn test_node_get_capabilities() {
+        let driver = make_driver();
+        let res = Node::node_get_capabilities(
+            &driver,
+            Request::new(NodeGetCapabilitiesRequest {}),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+        assert!(!res.capabilities.is_empty());
+    }
+
+    // ====== Node get info ======
+
+    #[tokio::test]
+    async fn test_node_get_info() {
+        let driver = make_driver();
+        let res = Node::node_get_info(
+            &driver,
+            Request::new(NodeGetInfoRequest {}),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+        assert_eq!(res.node_id, "test-node");
+        assert_eq!(res.max_volumes_per_node, 100);
+    }
+
+    // ====== Block staging/publishing ======
+
+    #[tokio::test]
+    async fn test_node_stage_volume_block_cap() {
+        let driver = make_driver();
+
+        // Create volume first
+        let create_res = Controller::create_volume(
+            &driver,
+            Request::new(CreateVolumeRequest {
+                name: "block-test".to_string(),
+                capacity_range: Some(CapacityRange {
+                    required_bytes: 1024 * 1024 * 1024,
+                    limit_bytes: 1024 * 1024 * 1024,
+                }),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+        let volume_id = create_res.volume.unwrap().volume_id;
+
+        let temp_path = std::env::temp_dir().join("csi-test-block-stage");
+        let stage_path = temp_path.to_string_lossy().to_string();
+
+        // Stage with block capability
+        let block_cap = VolumeCapability {
+            access_type: Some(volume_capability::AccessType::Block(volume_capability::BlockVolume {})),
+            access_mode: Some(volume_capability::AccessMode {
+                mode: volume_capability::access_mode::Mode::SingleNodeWriter as i32,
+            }),
+        };
+        let res = Node::node_stage_volume(
+            &driver,
+            Request::new(NodeStageVolumeRequest {
+                volume_id: volume_id.clone(),
+                staging_target_path: stage_path.clone(),
+                volume_capability: Some(block_cap),
+                ..Default::default()
+            }),
+        )
+        .await;
+        assert!(res.is_ok());
+        assert!(Path::new(&stage_path).exists());
+
+        // Cleanup
+        let _ = std::fs::remove_file(&stage_path);
+    }
+
+    // ====== publish_context from controller publish ======
+
+    #[tokio::test]
+    async fn test_controller_publish_returns_device_path() {
+        let driver = make_driver();
+
+        // Create volume
+        let create_res = Controller::create_volume(
+            &driver,
+            Request::new(CreateVolumeRequest {
+                name: "publish-test".to_string(),
+                capacity_range: Some(CapacityRange {
+                    required_bytes: 1024 * 1024 * 1024,
+                    limit_bytes: 1024 * 1024 * 1024,
+                }),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+        let volume_id = create_res.volume.unwrap().volume_id;
+
+        let pub_res = Controller::controller_publish_volume(
+            &driver,
+            Request::new(ControllerPublishVolumeRequest {
+                volume_id: volume_id.clone(),
+                node_id: "test-node".to_string(),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+
+        // Should contain device_path in publish_context
+        assert!(pub_res.publish_context.contains_key("device_path"));
+    }
+
+    // ====== list_volumes ======
+
+    #[tokio::test]
+    async fn test_list_volumes_empty() {
+        let driver = make_driver();
+        let res = Controller::list_volumes(
+            &driver,
+            Request::new(ListVolumesRequest {
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+        assert!(res.entries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_list_volumes_shows_created() {
+        let driver = make_driver();
+
+        Controller::create_volume(
+            &driver,
+            Request::new(CreateVolumeRequest {
+                name: "list-test".to_string(),
+                capacity_range: Some(CapacityRange {
+                    required_bytes: 1024 * 1024 * 1024,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap();
+
+        let res = Controller::list_volumes(
+            &driver,
+            Request::new(ListVolumesRequest {
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+        assert_eq!(res.entries.len(), 1);
+    }
+
+    // ====== get_capacity ======
+
+    #[tokio::test]
+    async fn test_get_capacity() {
+        let driver = make_driver();
+        let res = Controller::get_capacity(
+            &driver,
+            Request::new(GetCapacityRequest {
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+        assert!(res.available_capacity > 0);
+    }
+
+    // ====== Node unpublish cleanup ======
+
+    #[tokio::test]
+    async fn test_node_unpublish_removes_path() {
+        let driver = make_driver();
+
+        // Create volume
+        let create_res = Controller::create_volume(
+            &driver,
+            Request::new(CreateVolumeRequest {
+                name: "unpublish-test".to_string(),
+                capacity_range: Some(CapacityRange {
+                    required_bytes: 1024 * 1024 * 1024,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+        let volume_id = create_res.volume.unwrap().volume_id;
+
+        let temp_path = std::env::temp_dir().join("csi-test-unpublish");
+        let target_path = temp_path.to_string_lossy().to_string();
+
+        // Publish to create the path
+        Node::node_publish_volume(
+            &driver,
+            Request::new(NodePublishVolumeRequest {
+                volume_id: volume_id.clone(),
+                target_path: target_path.clone(),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(Path::new(&target_path).exists());
+
+        // Unpublish should remove the path
+        Node::node_unpublish_volume(
+            &driver,
+            Request::new(NodeUnpublishVolumeRequest {
+                volume_id: volume_id.clone(),
+                target_path: target_path.clone(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(!Path::new(&target_path).exists());
+    }
+
+    // ====== Idempotent create with compatible size ======
+
+    #[tokio::test]
+    async fn test_create_volume_same_name_compatible_size() {
+        let driver = make_driver();
+
+        // Create with 10 GiB
+        let create1 = Controller::create_volume(
+            &driver,
+            Request::new(CreateVolumeRequest {
+                name: "idempotent-test".to_string(),
+                capacity_range: Some(CapacityRange {
+                    required_bytes: 10 * 1024 * 1024 * 1024,
+                    limit_bytes: 10 * 1024 * 1024 * 1024,
+                }),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+
+        // Create same name with smaller required_bytes -> should return existing
+        let create2 = Controller::create_volume(
+            &driver,
+            Request::new(CreateVolumeRequest {
+                name: "idempotent-test".to_string(),
+                capacity_range: Some(CapacityRange {
+                    required_bytes: 5 * 1024 * 1024 * 1024,
+                    limit_bytes: 5 * 1024 * 1024 * 1024,
+                }),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+
+        assert_eq!(
+            create1.volume.as_ref().unwrap().volume_id,
+            create2.volume.as_ref().unwrap().volume_id
+        );
+    }
+
+    // ====== validate_volume_capabilities with valid volume ======
+
+    #[tokio::test]
+    async fn test_validate_volume_capabilities_valid() {
+        let driver = make_driver();
+
+        // Create a volume
+        let create_res = Controller::create_volume(
+            &driver,
+            Request::new(CreateVolumeRequest {
+                name: "validate-test".to_string(),
+                capacity_range: Some(CapacityRange {
+                    required_bytes: 1024 * 1024 * 1024,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+        let volume_id = create_res.volume.unwrap().volume_id;
+
+        let res = Controller::validate_volume_capabilities(
+            &driver,
+            Request::new(ValidateVolumeCapabilitiesRequest {
+                volume_id: volume_id.clone(),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+
+        assert!(res.confirmed.is_some());
+    }
+}
