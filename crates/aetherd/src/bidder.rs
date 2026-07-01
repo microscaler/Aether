@@ -95,8 +95,14 @@ impl Bidder {
             1.0
         };
 
+        // Migration penalty: Each active migration reduces the overall score by 15%
+        // This prevents nodes from being overwhelmed by simultaneous migrations.
+        let migration_penalty = (1.0 - (metrics.active_migrations as f64 * 0.15)).clamp(0.0, 1.0);
+
         // Combine scores with weights: Memory (40%), CPU (40%), Disk (20%)
-        let raw_score = (mem_score * 0.4 + cpu_score * 0.4 + disk_score * 0.2) * temp_penalty;
+        let raw_score = (mem_score * 0.4 + cpu_score * 0.4 + disk_score * 0.2)
+            * temp_penalty
+            * migration_penalty;
 
         // Map raw_score (0.0 to 1.0) to range 1 to 1000
         (1.0 + raw_score * 999.0) as i32
@@ -118,6 +124,7 @@ mod tests {
             disk_available: 50 * 1024 * 1024 * 1024, // 50 GB
             nvme_temp: 35.0,
             cpu_cores: 4,
+            active_migrations: 0,
         }
     }
 

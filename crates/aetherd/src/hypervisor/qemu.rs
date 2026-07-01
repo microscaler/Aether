@@ -58,12 +58,13 @@ impl QemuHypervisor {
     }
 
     async fn check_pid_alive(&self, pid: u32) -> bool {
-        let status = tokio::process::Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .status()
-            .await;
-        match status {
-            Ok(s) => s.success(),
+        use nix::sys::signal::kill;
+        use nix::unistd::Pid;
+
+        let pid = Pid::from_raw(pid as i32);
+        match kill(pid, None) {
+            Ok(_) => true,
+            Err(nix::errno::Errno::EPERM) => true,
             _ => false,
         }
     }
@@ -151,6 +152,186 @@ impl QmpClient {
         } else {
             Ok("STOPPED".to_string())
         }
+    }
+
+    /// Initiates a migration to the given URI.
+    pub async fn migrate(&self, uri: &str) -> Result<(), String> {
+        let mut stream = self.connect_and_negotiate().await?;
+        let cmd = format!(
+            "{{\"execute\": \"migrate\", \"arguments\": {{\"uri\": \"{}\"}}}} \n",
+            uri
+        );
+        stream
+            .write_all(cmd.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to dispatch migrate: {}", e))?;
+
+        let resp = Self::read_line(&mut stream).await?;
+        if resp.contains("\"error\"") {
+            return Err(format!("Migration failed: {}", resp));
+        }
+        Ok(())
+    }
+
+    /// Queries the migration status.
+    pub async fn query_migrate(&self) -> Result<String, String> {
+        let mut stream = self.connect_and_negotiate().await?;
+        let cmd = "{\"execute\": \"query-migrate\"}\n";
+        stream
+            .write_all(cmd.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to dispatch query-migrate: {}", e))?;
+
+        let resp = Self::read_line(&mut stream).await?;
+        Ok(resp)
+    }
+
+    /// Enables or disables a migration capability (e.g. "auto-converge").
+    pub async fn set_migration_capability(
+        &self,
+        capability: &str,
+        state: bool,
+    ) -> Result<(), String> {
+        let mut stream = self.connect_and_negotiate().await?;
+        let cmd = format!(
+            "{{\"execute\": \"migrate-set-capabilities\", \"arguments\": {{\"capabilities\": [{{ \"capability\": \"{}\", \"state\": {} }}] }}}}\n",
+            capability, state
+        );
+        stream
+            .write_all(cmd.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to set migration capability {}: {}", capability, e))?;
+
+        let resp = Self::read_line(&mut stream).await?;
+        if resp.contains("\"error\"") {
+            return Err(format!("Failed to set migration capability: {}", resp));
+        }
+        Ok(())
+    }
+
+    /// Starts an NBD server on the given address.
+    pub async fn nbd_server_start(&self, addr: &str) -> Result<(), String> {
+        let mut stream = self.connect_and_negotiate().await?;
+        let cmd = format!(
+            "{{\"execute\": \"nbd-server-start\", \"arguments\": {{\"addr\": {{ \"type\": \"inet\", \"data\": {{ \"host\": \"{}\", \"port\": \"{}\" }} }} }} }}\n",
+            addr.split(':').next().unwrap_or("0.0.0.0"),
+            addr.split(':').nth(1).unwrap_or("10809")
+        );
+        stream
+            .write_all(cmd.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to start NBD server: {}", e))?;
+
+        let resp = Self::read_line(&mut stream).await?;
+        if resp.contains("\"error\"") {
+            return Err(format!("NBD server start failed: {}", resp));
+        }
+        Ok(())
+    }
+
+    /// Adds a disk to the NBD server for mirroring.
+    pub async fn nbd_server_add(&self, device: &str) -> Result<(), String> {
+        let mut stream = self.connect_and_negotiate().await?;
+        let cmd = format!(
+            "{{\"execute\": \"nbd-server-add\", \"arguments\": {{\"device\": \"{}\", \"writable\": true }} }}\n",
+            device
+        );
+        stream
+            .write_all(cmd.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to add device to NBD server: {}", e))?;
+
+        let resp = Self::read_line(&mut stream).await?;
+        if resp.contains("\"error\"") {
+            return Err(format!("NBD server add failed: {}", resp));
+        }
+        Ok(())
+    }
+
+    /// Initiates a drive mirror operation.
+    pub async fn drive_mirror(&self, device: &str, target: &str) -> Result<(), String> {
+        let mut stream = self.connect_and_negotiate().await?;
+        let cmd = format!(
+            "{{\"execute\": \"drive-mirror\", \"arguments\": {{\"device\": \"{}\", \"target\": \"{}\", \"sync\": \"full\", \"mode\": \"existing\" }} }}\n",
+            device, target
+        );
+        stream
+            .write_all(cmd.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to dispatch drive-mirror: {}", e))?;
+
+        let resp = Self::read_line(&mut stream).await?;
+        if resp.contains("\"error\"") {
+            return Err(format!("Drive mirror failed: {}", resp));
+        }
+        Ok(())
+    }
+
+    /// Completes an active block job.
+    pub async fn block_job_complete(&self, device: &str) -> Result<(), String> {
+        let mut stream = self.connect_and_negotiate().await?;
+        let cmd = format!(
+            "{{\"execute\": \"block-job-complete\", \"arguments\": {{\"device\": \"{}\" }} }}\n",
+            device
+        );
+        stream
+            .write_all(cmd.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to dispatch block-job-complete: {}", e))?;
+
+        let resp = Self::read_line(&mut stream).await?;
+        if resp.contains("\"error\"") {
+            return Err(format!("Block job complete failed: {}", resp));
+        }
+        Ok(())
+    }
+
+    /// Queries active block jobs.
+    pub async fn query_block_jobs(&self) -> Result<String, String> {
+        let mut stream = self.connect_and_negotiate().await?;
+        let cmd = "{\"execute\": \"query-block-jobs\"}\n";
+        stream
+            .write_all(cmd.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to dispatch query-block-jobs: {}", e))?;
+
+        let resp = Self::read_line(&mut stream).await?;
+        Ok(resp)
+    }
+
+    /// Cancels an active migration.
+    pub async fn migrate_cancel(&self) -> Result<(), String> {
+        let mut stream = self.connect_and_negotiate().await?;
+        let cmd = "{\"execute\": \"migrate_cancel\"}\n";
+        stream
+            .write_all(cmd.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to dispatch migrate_cancel: {}", e))?;
+
+        let resp = Self::read_line(&mut stream).await?;
+        if resp.contains("\"error\"") {
+            return Err(format!("Migrate cancel failed: {}", resp));
+        }
+        Ok(())
+    }
+
+    /// Sets migration parameters (e.g. max-bandwidth).
+    pub async fn set_migration_parameters(&self, max_bandwidth: u64) -> Result<(), String> {
+        let mut stream = self.connect_and_negotiate().await?;
+        let cmd = format!(
+            "{{\"execute\": \"migrate-set-parameters\", \"arguments\": {{\"max-bandwidth\": {} }} }}\n",
+            max_bandwidth
+        );
+        stream
+            .write_all(cmd.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to set migration parameters: {}", e))?;
+
+        let resp = Self::read_line(&mut stream).await?;
+        if resp.contains("\"error\"") {
+            return Err(format!("Failed to set migration parameters: {}", resp));
+        }
+        Ok(())
     }
 }
 
@@ -242,10 +423,11 @@ impl Hypervisor for QemuHypervisor {
             .parse()
             .map_err(|e| format!("Failed to parse PID '{}': {}", pid_str, e))?;
 
-        let _ = tokio::process::Command::new("kill")
-            .arg(pid.to_string())
-            .status()
-            .await;
+        use nix::sys::signal::{kill, Signal};
+        use nix::unistd::Pid;
+        let nix_pid = Pid::from_raw(pid as i32);
+
+        let _ = kill(nix_pid, Signal::SIGTERM);
 
         for _ in 0..10 {
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -256,10 +438,7 @@ impl Hypervisor for QemuHypervisor {
             }
         }
 
-        let _ = tokio::process::Command::new("kill")
-            .args(["-9", &pid.to_string()])
-            .status()
-            .await;
+        let _ = kill(nix_pid, Signal::SIGKILL);
 
         let _ = tokio::fs::remove_file(&pid_path).await;
         self.cleanup_host_resources().await?;
@@ -295,6 +474,10 @@ impl Hypervisor for QemuHypervisor {
             Ok(status) => Ok(status),
             Err(_) => Ok("RUNNING".to_string()),
         }
+    }
+
+    fn get_qmp_socket_path(&self) -> Option<String> {
+        Some(self.config.qmp_socket_path.clone())
     }
 }
 

@@ -48,6 +48,8 @@ pub struct SystemMetrics {
     pub nvme_temp: f64,
     /// Number of physical/logical CPU cores.
     pub cpu_cores: u32,
+    /// Number of active VM migrations currently being processed by this node.
+    pub active_migrations: u32,
 }
 
 /// Helper struct for parsing CPU load averages.
@@ -142,45 +144,11 @@ pub fn parse_meminfo(path: &str) -> Result<MemoryInfo, String> {
 }
 
 pub fn get_disk_space(mount_point: &str) -> Result<DiskInfo, String> {
-    let output = std::process::Command::new("df")
-        .args(["-k", mount_point])
-        .output()
-        .map_err(|e| e.to_string())?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "df command failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    let out_str = String::from_utf8_lossy(&output.stdout);
-    let mut lines = out_str.lines();
-    let _header = lines.next().ok_or_else(|| "Empty df output".to_string())?;
-
-    let data_line = lines
-        .next()
-        .ok_or_else(|| "Missing data line in df output".to_string())?;
-    let mut parts = data_line.split_whitespace();
-    let _filesystem = parts
-        .next()
-        .ok_or_else(|| "Missing filesystem".to_string())?;
-    let total_kb_str = parts
-        .next()
-        .ok_or_else(|| "Missing total blocks".to_string())?;
-    let _used = parts
-        .next()
-        .ok_or_else(|| "Missing used blocks".to_string())?;
-    let available_kb_str = parts
-        .next()
-        .ok_or_else(|| "Missing available blocks".to_string())?;
-
-    let total_kb = total_kb_str.parse::<u64>().map_err(|e| e.to_string())?;
-    let available_kb = available_kb_str.parse::<u64>().map_err(|e| e.to_string())?;
+    let stat = nix::sys::statvfs::statvfs(mount_point).map_err(|e| e.to_string())?;
 
     Ok(DiskInfo {
-        total_bytes: total_kb * 1024,
-        available_bytes: available_kb * 1024,
+        total_bytes: (stat.blocks() as u64 * stat.fragment_size() as u64),
+        available_bytes: (stat.blocks_available() as u64 * stat.fragment_size() as u64),
     })
 }
 
@@ -233,7 +201,7 @@ impl TelemetryCollector {
     }
 
     /// Collects system telemetry metrics. Falls back to mock values if reading fails.
-    pub fn collect(&self) -> SystemMetrics {
+    pub fn collect(&self, active_migrations: u32) -> SystemMetrics {
         let load = parse_loadavg(&self.config.loadavg_path).unwrap_or_else(|e| {
             log::warn!("Failed to parse loadavg: {}, using mock values", e);
             LoadAvg {
@@ -278,6 +246,7 @@ impl TelemetryCollector {
             disk_available: disk.available_bytes,
             nvme_temp,
             cpu_cores,
+            active_migrations,
         }
     }
 }

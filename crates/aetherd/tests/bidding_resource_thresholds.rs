@@ -17,6 +17,7 @@ fn test_metrics() -> SystemMetrics {
         disk_available: 100 * 1024 * 1024 * 1024, // 100 GB
         nvme_temp: 35.0,
         cpu_cores: 4,
+        active_migrations: 0,
     }
 }
 

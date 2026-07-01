@@ -118,7 +118,7 @@ To deliver high-performance persistent storage:
 *   VM disks are created instantaneously as thin-provisioned **ZVOLs** cloned from base templates.
 *   **Kubernetes CSI Integration (Production - Network-Attached iSCSI):** Kubernetes running inside guest compute microVMs provisions storage via **`democratic-csi`** configured with the `zfs-generic-iscsi` driver. To maintain strict decoupling and reliability, volume claims are *never* mounted from the local blade running the VM. Instead:
     1. The Aether Aggregator commands `aetherd` on the designated Storage Blade to cut the zvol and export it as an iSCSI target using the Linux SCSI Target framework (LIO).
-    2. The Compute Blade host OS acts as an iSCSI initiator, logging into the Storage Blade's iSCSI target portal over the high-speed **VLAN 11 (Storage Fabric)**.
+    2. The Compute Blade host OS acts as an iSCSI initiator, logging into the Storage Blade's iSCSI target portal over the high-speed **VLAN 11 (Storage Fabric)** via the `IscsiManager` trait in `aetherd`.
     3. The Compute Blade maps the iSCSI target locally as a block device (e.g., `/dev/sdX`) and maps `/dev/sdX` directly down into Firecracker's `virtio-blk` drive interface or QEMU-KVM's disk configuration.
 *   **Storage Network Configuration (VLAN 11):** All iSCSI traffic is isolated on a dedicated high-bandwidth **VLAN 11 (Storage Fabric)** over the HPE Virtual Connect 10Gb midplane fabric. Both Compute and Storage blade network interfaces for VLAN 11 must be configured with Jumbo Frames (**MTU 9000**) to optimize SCSI command processing, reduce CPU overhead, and maximize throughput.
 *   **CSI Driver Mocking & Conformance (Test):** The aggregator includes a custom **`AetherCsiDriver`** (`crates/aether-aggregator/src/storage/csi.rs`) implementing the standard gRPC CSI v1.x service. In test and CI environments, this component acts as a high-fidelity mock, staging and publishing block capability requests as regular files and filesystem capability requests as directories, simulating network-attached block mappings without requiring live iSCSI targets or `democratic-csi` deployments.
@@ -244,10 +244,25 @@ For detailed specification contracts, schemas, and bootstrapping pipelines, refe
 
 ---
 
-## 6. Architectural Guidelines & Decisions
+## 6. Live Migration & Auto-Convergence
+Aether supports live relocation of running workloads (primarily for the Infrastructure Pool using QEMU-KVM) to facilitate hardware maintenance or load balancing.
 
-1.  **Low footprint:** The local node daemon `aetherd` must run with a target memory resident set size (RSS) of `<15MB`, ensuring maximum CPU/RAM is allocated to tenant workloads.
-2.  **No Nested Virtualization:** Firecracker workloads must always be assigned to Compute blades running bare metal Linux, bypassing nested virtualization traps.
-3.  **Out-of-band Attestation:** Nodes must authenticate via OOB hardware-attested paths to prevent hypervisor escapes from capturing cluster-wide control tokens.
-4.  **Vendor-Agnostic Core Logic:** Core bidding, scheduling, and failure recovery pipelines in the central aggregator must never interact directly with concrete vendor endpoints; they must interact exclusively with the `ChassisManager` and `MidplaneNetworkManager` trait structures.
-5.  **CAPI Provider Decoupling:** The future Cluster API provider must interact only via the Kubernetes Custom Resource Definitions (CRDs) reconciled by the central Aggregator, avoiding direct gRPC or OOB connections to physical blades.
+*   **Three-Phase Memory Transfer:** Aether utilizes QEMU's pre-copy migration.
+    1. **Initial Setup:** Destination node allocates memory and prepares for incoming stream.
+    2. **Iterative Transfer:** Memory pages are copied while the VM continues to run. Dirty pages are re-tracked and re-sent.
+    3. **Stop-and-Copy:** Once the remaining dirty pages are small enough, the source VM is paused, the final state is transferred, and the destination VM resumes.
+*   **Block Replication (NBD Mirroring):** For local ephemeral disks, Aether orchestrates block mirroring over NBD (Network Block Device). Persistent data on iSCSI targets is handed over by re-attaching the target on the destination node.
+*   **Auto-Convergence:** To guarantee migration completion under high write loads, Aether enables the `auto-converge` capability, which dynamically throttles the VM's vCPUs if the memory dirty rate exceeds the available migration bandwidth.
+*   **Migration Scoring:** The `Bidder` applies a **15% penalty** to a node's bid score for each active migration it is currently processing, preventing node over-saturation during mass relocations.
+
+---
+
+## 7. Mocking & Hardware Emulation (`pact-mock-server`)
+
+Because Aether interacts with specialized data center hardware (HPE Synergy, Dell PowerEdge MX, etc.), testing against physical chassis in CI/CD is impractical. Project Aether utilizes a **contract-testing** approach with the `pact-mock-server`:
+
+*   **REST API Fidelity:** The mock server emulates vendor-specific REST API schemas (e.g., HPE OneView, Dell OpenManage Enterprise) with high fidelity, returning valid JSON responses, status codes, and error conditions.
+*   **Pact Integration:** We use [Pact.io](https://pact.io/) to define contracts between Aether drivers (Consumers) and the Mock Server (Provider). This ensures that driver logic stays synchronized with real-world API behaviors.
+*   **Stateful Mocks:** The `pact-mock-server` maintains internal state for simulated chassis (e.g., list of slots, current power states, VLAN profiles), allowing drivers to perform sequential operations (e.g., PowerOn -> QueryStatus) with consistent results.
+
+For more information on running or extending mocks, see [CONTRIBUTING.md](file:///Users/casibbald/Workspace/remote/microscaler/Aether/CONTRIBUTING.md).

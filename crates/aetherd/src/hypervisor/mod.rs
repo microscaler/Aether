@@ -19,4 +19,7 @@ pub trait Hypervisor: Send + Sync {
 
     /// Queries the execution status of the VM.
     async fn query_status(&self) -> Result<String, String>;
+
+    /// Returns the QMP socket path if available.
+    fn get_qmp_socket_path(&self) -> Option<String>;
 }

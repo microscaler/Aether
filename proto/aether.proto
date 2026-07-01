@@ -12,6 +12,8 @@ service AetherNode {
     rpc ExecuteVM(ExecuteVMRequest) returns (ExecuteVMResponse);
     rpc TeardownVM(TeardownVMRequest) returns (TeardownVMResponse);
     rpc ListVMs(ListVMsRequest) returns (ListVMsResponse);
+    rpc PrepareMigration(PrepareMigrationRequest) returns (PrepareMigrationResponse);
+    rpc StartMigration(StartMigrationRequest) returns (StartMigrationResponse);
 }
 
 message RegisterNodeRequest {
@@ -102,5 +104,31 @@ message TelemetryReport {
 message ControlRequest {
     string command = 1;
     string target = 2;
+}
+
+message PrepareMigrationRequest {
+    string token = 1;
+    string workload_uuid = 2;
+    uint32 port = 3;
+    bool use_tls = 4;
+}
+
+message PrepareMigrationResponse {
+    bool success = 1;
+    string error_message = 2;
+}
+
+message StartMigrationRequest {
+    string token = 1;
+    string workload_uuid = 2;
+    string destination_ip = 3;
+    uint32 port = 4;
+    bool use_tls = 5;
+    uint64 max_bandwidth = 6;
+}
+
+message StartMigrationResponse {
+    bool success = 1;
+    string error_message = 2;
 }
 

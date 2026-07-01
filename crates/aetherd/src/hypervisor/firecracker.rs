@@ -228,11 +228,12 @@ impl Hypervisor for FirecrackerHypervisor {
             .parse()
             .map_err(|e| format!("Failed to parse PID '{}': {}", pid_str, e))?;
 
-        // Dispatch SIGTERM (kill <pid>)
-        let _ = tokio::process::Command::new("kill")
-            .arg(pid.to_string())
-            .status()
-            .await;
+        use nix::sys::signal::{kill, Signal};
+        use nix::unistd::Pid;
+        let nix_pid = Pid::from_raw(pid as i32);
+
+        // Dispatch SIGTERM
+        let _ = kill(nix_pid, Signal::SIGTERM);
 
         // Wait up to 500ms for process to exit
         for _ in 0..10 {
@@ -243,11 +244,8 @@ impl Hypervisor for FirecrackerHypervisor {
             }
         }
 
-        // Force SIGKILL (kill -9 <pid>) if process refuses to exit
-        let _ = tokio::process::Command::new("kill")
-            .args(["-9", &pid.to_string()])
-            .status()
-            .await;
+        // Force SIGKILL
+        let _ = kill(nix_pid, Signal::SIGKILL);
 
         let _ = tokio::fs::remove_file(&pid_path).await;
         Ok(())
@@ -268,16 +266,24 @@ impl Hypervisor for FirecrackerHypervisor {
             return Ok("STOPPED".to_string());
         }
 
-        // Run kill -0 <pid> to verify process exists
-        let status = tokio::process::Command::new("kill")
-            .args(["-0", pid_trim])
-            .status()
-            .await;
+        let pid: u32 = pid_trim
+            .parse()
+            .map_err(|e| format!("Failed to parse PID: {}", e))?;
 
-        match status {
-            Ok(s) if s.success() => Ok("RUNNING".to_string()),
+        use nix::sys::signal::kill;
+        use nix::unistd::Pid;
+        let nix_pid = Pid::from_raw(pid as i32);
+
+        // Run kill(pid, None) to verify process exists
+        match kill(nix_pid, None) {
+            Ok(_) => Ok("RUNNING".to_string()),
+            Err(nix::errno::Errno::EPERM) => Ok("RUNNING".to_string()),
             _ => Ok("STOPPED".to_string()),
         }
+    }
+
+    fn get_qmp_socket_path(&self) -> Option<String> {
+        None
     }
 }
 

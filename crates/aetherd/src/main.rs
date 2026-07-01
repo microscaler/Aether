@@ -43,6 +43,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bidder = Arc::new(aetherd::bidder::Bidder::new(
         aetherd::bidder::BidderConfig::default(),
     ));
+    let migration_manager = Arc::new(aetherd::migration::RealMigrationManager::new(
+        "127.0.0.1".to_string(),
+    ));
+    let iscsi_manager = Arc::new(aetherd::storage::iscsi::RealIscsiManager);
 
     // Expose Node Daemon Server API
     let daemon_service = AetherNodeImpl::new(
@@ -51,6 +55,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         token_manager.clone(),
         telemetry_collector,
         bidder,
+        migration_manager,
+        iscsi_manager,
     );
 
     println!("Starting Aether Node Daemon on {local_addr}");

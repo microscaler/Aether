@@ -10,6 +10,8 @@ use aether_auth::proto::aether_node_server::AetherNode;
 use aether_auth::proto::{BidRequest, ExecuteVmRequest, ListVMsRequest, TeardownVmRequest};
 use aether_auth::token::TokenManager;
 use aetherd::bidder::Bidder;
+use aetherd::migration::RealMigrationManager;
+use aetherd::storage::iscsi::RealIscsiManager;
 use aetherd::telemetry::TelemetryCollector;
 use aetherd::AetherNodeImpl;
 
@@ -61,12 +63,17 @@ async fn test_node_reverse_bid() -> Result<(), Box<dyn std::error::Error>> {
         b"supersecretkeyforauthsupersecretkeyforauth".to_vec(),
     ));
     let (_ctx, telemetry_collector, bidder) = setup_test_context()?;
+    let migration_manager = Arc::new(RealMigrationManager::new("127.0.0.1".to_string()));
+    let iscsi_manager = Arc::new(RealIscsiManager);
+
     let node = AetherNodeImpl::new(
         "test-node-1".to_string(),
         "COMPUTE".to_string(),
         token_manager,
         telemetry_collector,
         bidder,
+        migration_manager,
+        iscsi_manager,
     );
 
     let res = node
@@ -91,12 +98,17 @@ async fn test_node_execute_vm_validation() -> Result<(), Box<dyn std::error::Err
         b"supersecretkeyforauthsupersecretkeyforauth".to_vec(),
     ));
     let (_ctx, telemetry_collector, bidder) = setup_test_context()?;
+    let migration_manager = Arc::new(RealMigrationManager::new("127.0.0.1".to_string()));
+    let iscsi_manager = Arc::new(RealIscsiManager);
+
     let node = AetherNodeImpl::new(
         "test-node-1".to_string(),
         "COMPUTE".to_string(),
         token_manager.clone(),
         telemetry_collector,
         bidder,
+        migration_manager,
+        iscsi_manager,
     );
 
     // Generate valid token
@@ -153,12 +165,17 @@ async fn test_node_teardown_vm_validation() -> Result<(), Box<dyn std::error::Er
         b"supersecretkeyforauthsupersecretkeyforauth".to_vec(),
     ));
     let (_ctx, telemetry_collector, bidder) = setup_test_context()?;
+    let migration_manager = Arc::new(RealMigrationManager::new("127.0.0.1".to_string()));
+    let iscsi_manager = Arc::new(RealIscsiManager);
+
     let node = AetherNodeImpl::new(
         "test-node-1".to_string(),
         "COMPUTE".to_string(),
         token_manager.clone(),
         telemetry_collector,
         bidder,
+        migration_manager,
+        iscsi_manager,
     );
 
     // Generate valid token
@@ -211,12 +228,17 @@ async fn test_node_list_vms() -> Result<(), Box<dyn std::error::Error>> {
         b"supersecretkeyforauthsupersecretkeyforauth".to_vec(),
     ));
     let (_ctx, telemetry_collector, bidder) = setup_test_context()?;
+    let migration_manager = Arc::new(RealMigrationManager::new("127.0.0.1".to_string()));
+    let iscsi_manager = Arc::new(RealIscsiManager);
+
     let node = AetherNodeImpl::new(
         "test-node-1".to_string(),
         "COMPUTE".to_string(),
         token_manager.clone(),
         telemetry_collector,
         bidder,
+        migration_manager,
+        iscsi_manager,
     );
 
     let token = token_manager.generate_token("test-node-1")?;

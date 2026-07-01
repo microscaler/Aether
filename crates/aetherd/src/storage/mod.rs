@@ -1,3 +1,4 @@
+pub mod iscsi;
 pub mod zfs;
 
 use async_trait::async_trait;

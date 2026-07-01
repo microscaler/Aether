@@ -44,5 +44,20 @@ Aether is structured as a single Rust Cargo workspace containing all the necessa
     cargo clippy --workspace --all-targets -- -D warnings
     cargo test --workspace
     ```
-4.  **Validate Chassis Integration Changes via Pact Contracts:** If you modify `MidplaneNetworkManager` clients (such as the HPE Virtual Connect client), you must run and update the Pact contract integration tests in `crates/aether-aggregator/tests/switch_vlan_tagging_integration.rs` to ensure contract validity.
-5.  **Submit a Pull Request (PR):** Make sure your PR contains a detailed description matching the architectural guidelines in [ARCHITECTURE.md](file:///Users/casibbald/Workspace/remote/microscaler/Aether/ARCHITECTURE.md).
+4.  **Validate Chassis Integration Changes via Pact Contracts:** If you modify `MidplaneNetworkManager` clients (such as the HPE Virtual Connect client), you must run and update the Pact contract integration tests.
+    *   **Start the Mock Server:** `cargo run -p pact-mock-server --bin oneview`
+    *   **Run Integration Tests:** `cargo test --test switch_vlan_tagging_integration`
+    *   **Update Contracts:** If API fields change, update the expected JSON payloads in `crates/aether-aggregator/tests/contracts/`.
+5.  **iSCSI Network Path Verification:** When modifying `IscsiManager` or related storage logic, verify that you are not introducing local mount dependencies. All volume claims must be handled via network targets as defined in Section 3 of `ARCHITECTURE.md`.
+    *   **Mocking iscsiadm:** Use the mock-iscsiadm script in `scripts/` (if available) for local development without a real iSCSI fabric.
+
+---
+
+## 3. Extending the Mock Server (`pact-mock-server`)
+
+When adding support for a new hardware vendor (e.g., Dell MX7000), you must also add a corresponding mock service:
+
+1.  **Create a new module:** Add `crates/pact-mock-server/src/<vendor_name>.rs`.
+2.  **Implement the REST handlers:** Use `axum` or `warp` (depending on the current implementation) to define routes that match the vendor's API specification.
+3.  **Add a binary target:** Add a new entry in `crates/pact-mock-server/Cargo.toml` for the new vendor's mock binary.
+4.  **Update the test suite:** Create a new integration test in the relevant crate to verify the driver against the new mock.

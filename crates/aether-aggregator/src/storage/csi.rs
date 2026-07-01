@@ -657,13 +657,13 @@ mod tests {
     use super::*;
     use aether_auth::csi::{
         volume_capability, CapacityRange, ControllerExpandVolumeRequest,
-        ControllerGetCapabilitiesRequest, ControllerGetVolumeRequest, ControllerModifyVolumeRequest,
-        ControllerPublishVolumeRequest, ControllerUnpublishVolumeRequest, CreateSnapshotRequest,
-        CreateVolumeRequest, DeleteSnapshotRequest, DeleteVolumeRequest, GetCapacityRequest,
-        GetSnapshotRequest, ListSnapshotsRequest, ListVolumesRequest,
-        NodeGetCapabilitiesRequest, NodeGetInfoRequest, NodePublishVolumeRequest,
-        NodeStageVolumeRequest, NodeUnpublishVolumeRequest, NodeUnstageVolumeRequest,
-        ValidateVolumeCapabilitiesRequest, VolumeCapability,
+        ControllerGetCapabilitiesRequest, ControllerGetVolumeRequest,
+        ControllerModifyVolumeRequest, ControllerPublishVolumeRequest,
+        ControllerUnpublishVolumeRequest, CreateSnapshotRequest, CreateVolumeRequest,
+        DeleteSnapshotRequest, DeleteVolumeRequest, GetCapacityRequest, GetSnapshotRequest,
+        ListSnapshotsRequest, ListVolumesRequest, NodeGetCapabilitiesRequest, NodeGetInfoRequest,
+        NodePublishVolumeRequest, NodeStageVolumeRequest, NodeUnpublishVolumeRequest,
+        NodeUnstageVolumeRequest, ValidateVolumeCapabilitiesRequest, VolumeCapability,
     };
     use std::path::Path;
     use tonic::Code;
@@ -1153,13 +1153,10 @@ mod tests {
     #[tokio::test]
     async fn test_node_get_capabilities() {
         let driver = make_driver();
-        let res = Node::node_get_capabilities(
-            &driver,
-            Request::new(NodeGetCapabilitiesRequest {}),
-        )
-        .await
-        .unwrap()
-        .into_inner();
+        let res = Node::node_get_capabilities(&driver, Request::new(NodeGetCapabilitiesRequest {}))
+            .await
+            .unwrap()
+            .into_inner();
         assert!(!res.capabilities.is_empty());
     }
 
@@ -1168,13 +1165,10 @@ mod tests {
     #[tokio::test]
     async fn test_node_get_info() {
         let driver = make_driver();
-        let res = Node::node_get_info(
-            &driver,
-            Request::new(NodeGetInfoRequest {}),
-        )
-        .await
-        .unwrap()
-        .into_inner();
+        let res = Node::node_get_info(&driver, Request::new(NodeGetInfoRequest {}))
+            .await
+            .unwrap()
+            .into_inner();
         assert_eq!(res.node_id, "test-node");
         assert_eq!(res.max_volumes_per_node, 100);
     }
@@ -1207,7 +1201,9 @@ mod tests {
 
         // Stage with block capability
         let block_cap = VolumeCapability {
-            access_type: Some(volume_capability::AccessType::Block(volume_capability::BlockVolume {})),
+            access_type: Some(volume_capability::AccessType::Block(
+                volume_capability::BlockVolume {},
+            )),
             access_mode: Some(volume_capability::AccessMode {
                 mode: volume_capability::access_mode::Mode::SingleNodeWriter as i32,
             }),

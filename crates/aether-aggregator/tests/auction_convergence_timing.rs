@@ -68,6 +68,28 @@ impl AetherNode for MockNode {
     ) -> Result<Response<ListVMsResponse>, Status> {
         Ok(Response::new(ListVMsResponse { vms: vec![] }))
     }
+
+    async fn prepare_migration(
+        &self,
+        _request: Request<aether_auth::proto::PrepareMigrationRequest>,
+    ) -> Result<Response<aether_auth::proto::PrepareMigrationResponse>, Status> {
+        Ok(Response::new(
+            aether_auth::proto::PrepareMigrationResponse {
+                success: true,
+                error_message: String::new(),
+            },
+        ))
+    }
+
+    async fn start_migration(
+        &self,
+        _request: Request<aether_auth::proto::StartMigrationRequest>,
+    ) -> Result<Response<aether_auth::proto::StartMigrationResponse>, Status> {
+        Ok(Response::new(aether_auth::proto::StartMigrationResponse {
+            success: true,
+            error_message: String::new(),
+        }))
+    }
 }
 
 async fn start_mock_node(

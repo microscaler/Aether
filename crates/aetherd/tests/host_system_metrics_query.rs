@@ -11,7 +11,7 @@ fn test_host_system_metrics_query() -> Result<(), Box<dyn std::error::Error>> {
     let collector = TelemetryCollector::new(TelemetryConfig::default());
 
     // Trigger metrics collection
-    let metrics = collector.collect();
+    let metrics = collector.collect(0);
 
     // Verify CPU load values (loads must be non-negative)
     assert!(metrics.load_one >= 0.0);
