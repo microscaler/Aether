@@ -1,6 +1,6 @@
 # Coverage Report (excl. main.rs)
 
-**2527** / **2881** lines covered — **87.71%**
+**2593** / **2911** lines covered — **89.08%**
 
 **Threshold:** 80% | **Status:** ✅ PASS
 
@@ -8,7 +8,7 @@
 | --- | --- | --- | --- | --- |
 | `aether-aggregator` | 11 | 1350 | 1509 | 89.5% |
 | `aether-auth` | 3 | 175 | 189 | 92.6% |
-| `aetherd` | 18 | 1002 | 1183 | 84.7% |
+| `aetherd` | 18 | 1068 | 1213 | 88.0% |
 
 ## `aether-aggregator`
 
@@ -209,16 +209,6 @@
 
 ## `aetherd`
 
-### crates/aetherd/tests/vlan_isolation_verification.rs
-
-- Coverage: 🔴 **41.7%** (15/36 lines)
-- **Missed lines:**
-  - Lines 10-12
-  - Lines 14-26
-  - Lines 28-29
-  - Line 31
-  - Lines 34-35
-
 ### crates/aetherd/src/cloud_init.rs
 
 - Coverage: 🔴 **67.6%** (48/71 lines)
@@ -231,18 +221,6 @@
   - Lines 147-149
   - Lines 151-152
   - Lines 156-157
-
-### crates/aetherd/src/hypervisor/firecracker.rs
-
-- Coverage: 🟡 **74.2%** (66/89 lines)
-- **Missed lines:**
-  - Line 138
-  - Lines 158-174
-  - Line 177
-  - Line 184
-  - Line 213
-  - Line 262
-  - Line 273
 
 ### crates/aetherd/src/hypervisor/qemu.rs
 
@@ -335,6 +313,15 @@
   - Line 37
   - Line 53
 
+### crates/aetherd/src/hypervisor/firecracker.rs
+
+- Coverage: 🟢 **93.4%** (85/91 lines)
+- **Missed lines:**
+  - Lines 178-179
+  - Line 183
+  - Lines 241-242
+  - Line 279
+
 ### crates/aetherd/tests/node_tests.rs
 
 - Coverage: 🟢 **93.9%** (168/179 lines)
@@ -358,6 +345,13 @@
   - Line 18
   - Line 39
   - Line 67
+
+### crates/aetherd/tests/vlan_isolation_verification.rs
+
+- Coverage: 🟢 **96.9%** (62/64 lines)
+- **Missed lines:**
+  - Line 29
+  - Line 31
 
 ### crates/aetherd/tests/vsock_stream_performance.rs
 

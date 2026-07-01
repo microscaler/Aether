@@ -79,7 +79,8 @@ pub struct JailerConfig {
     /// Directory where the chroot jail will be built.
     pub chroot_base_dir: String,
     /// NUMA node index where the process will be pinned.
-    pub node_index: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_index: Option<u32>,
 }
 
 /// Hypervisor implementation managing a single Firecracker microVM process.
@@ -156,11 +157,9 @@ impl Hypervisor for FirecrackerHypervisor {
         // Setup process execution arguments
         let args = if self.extra_args.is_empty() {
             if let Some(ref jc) = self.jailer_config {
-                vec![
+                let mut jailer_args: Vec<String> = vec![
                     "--id".to_string(),
                     self.id.clone(),
-                    "--node".to_string(),
-                    jc.node_index.to_string(),
                     "--exec-file".to_string(),
                     self.bin_path.clone(),
                     "--uid".to_string(),
@@ -172,7 +171,14 @@ impl Hypervisor for FirecrackerHypervisor {
                     "--".to_string(),
                     "--config-file".to_string(),
                     self.config_path.clone(),
-                ]
+                ];
+                // node_index was removed from jailer in newer versions;
+                // only pass it if set (for forward/backward compat)
+                if let Some(node) = jc.node_index {
+                    jailer_args.push("--node".to_string());
+                    jailer_args.push(node.to_string());
+                }
+                jailer_args
             } else {
                 vec!["--config-file".to_string(), self.config_path.clone()]
             }
@@ -355,7 +361,7 @@ mod tests {
             uid: 1000,
             gid: 1000,
             chroot_base_dir: "/srv/jailer".to_string(),
-            node_index: 0,
+            node_index: Some(0),
         };
         hypervisor.jailer_config = Some(jc);
 
@@ -366,5 +372,119 @@ mod tests {
             hypervisor.jailer_config.as_ref().unwrap().chroot_base_dir,
             "/srv/jailer"
         );
+    }
+
+    /// Test spawn with jailer_config set — exercises the jailer binary path
+    /// and the full jailer CLI args vector (lines 158-174).
+    /// Since jailer v1.10.0 requires the exec-file to contain "firecracker",
+    /// we test with a minimal config — spawn() succeeds (PID file written)
+    /// but firecracker exits before we can query it.
+    #[tokio::test]
+    async fn test_firecracker_spawn_with_jailer() {
+        let dir = tempdir().unwrap();
+        let config_path = dir
+            .path()
+            .join("vm-jailer.json")
+            .to_str()
+            .unwrap()
+            .to_string();
+        let log_path = dir
+            .path()
+            .join("vm-jailer.log")
+            .to_str()
+            .unwrap()
+            .to_string();
+        let chroot = dir.path().join("chroot");
+        std::fs::create_dir_all(&chroot).unwrap();
+
+        let mut config = get_sample_config();
+        config.network_interfaces.clear();
+
+        let jailer_config = JailerConfig {
+            uid: 1000,
+            gid: 1000,
+            chroot_base_dir: chroot.to_str().unwrap().to_string(),
+            node_index: None,
+        };
+
+        let mut hypervisor = FirecrackerHypervisor::new(
+            "jailer-vm".to_string(),
+            "/usr/local/bin/firecracker".to_string(),
+            config_path.clone(),
+            log_path.clone(),
+            config,
+        );
+
+        hypervisor.jailer_config = Some(jailer_config);
+
+        // spawn() should succeed — the PID file is written even if
+        // firecracker exits immediately with a bad config
+        let result = hypervisor.spawn().await;
+        assert!(result.is_ok(), "spawn failed: {:?}", result.err());
+
+        // Verify PID file was created (proves jailer CLI args path was exercised)
+        let pid_path = hypervisor.pid_path();
+        assert!(Path::new(&pid_path).exists(), "PID file not created");
+
+        // Give firecracker a moment to exit
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+        // stop() should handle the exited process gracefully
+        hypervisor.stop().await.unwrap();
+    }
+
+    /// Test stop when PID file doesn't exist — returns Ok early (line 213).
+    #[tokio::test]
+    async fn test_stop_no_pid_file() {
+        let config = get_sample_config();
+        let hypervisor = FirecrackerHypervisor::new(
+            "no-pid-vm".to_string(),
+            "/usr/bin/firecracker".to_string(),
+            "/tmp/nonexistent_aether_test.pid.json".to_string(),
+            "/tmp/nonexistent_aether_test.log".to_string(),
+            config,
+        );
+
+        // stop() should return Ok because PID file doesn't exist
+        let result = hypervisor.stop().await;
+        assert!(result.is_ok());
+    }
+
+    /// Test query_status when PID file exists but PID is empty (line 262).
+    #[tokio::test]
+    async fn test_query_status_empty_pid_file() {
+        let dir = tempdir().unwrap();
+        let pid_path = dir.path().join("empty.pid");
+        std::fs::write(&pid_path, "   ").unwrap();
+
+        let config = get_sample_config();
+        let hypervisor = FirecrackerHypervisor::new(
+            "empty-pid-vm".to_string(),
+            "/usr/bin/firecracker".to_string(),
+            pid_path.to_str().unwrap().to_string(),
+            dir.path().join("empty.log").to_str().unwrap().to_string(),
+            config,
+        );
+
+        assert_eq!(hypervisor.query_status().await.unwrap(), "STOPPED");
+    }
+
+    /// Test config write failure — write to an inaccessible directory (line 138).
+    #[tokio::test]
+    async fn test_spawn_config_write_error() {
+        let config = get_sample_config();
+        // Use /proc/nonexistent which has no write permission
+        let hypervisor = FirecrackerHypervisor::new(
+            "error-vm".to_string(),
+            "/usr/bin/firecracker".to_string(),
+            "/proc/1/aether_config_error_test.json".to_string(),
+            "/tmp/aether_error_test.log".to_string(),
+            config,
+        );
+
+        let result = hypervisor.spawn().await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("Failed to write config file"));
     }
 }

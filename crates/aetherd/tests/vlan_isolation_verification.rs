@@ -58,6 +58,53 @@ async fn test_mock_bridge_manager_lifecycle() -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
+#[cfg(test)]
+mod permission_error_tests {
+    use super::*;
+
+    #[test]
+    fn test_is_permission_error_kind() {
+        let err = io::Error::new(io::ErrorKind::PermissionDenied, "access denied");
+        assert!(is_permission_error(&err));
+    }
+
+    #[test]
+    fn test_is_permission_error_raw_os_eperm() {
+        let err = io::Error::from_raw_os_error(1); // EPERM
+        assert!(is_permission_error(&err));
+    }
+
+    #[test]
+    fn test_is_permission_error_raw_os_eacces() {
+        let err = io::Error::from_raw_os_error(13); // EACCES
+        assert!(is_permission_error(&err));
+    }
+
+    #[test]
+    fn test_is_permission_error_string_permission_denied() {
+        let err = io::Error::other("Permission denied");
+        assert!(is_permission_error(&err));
+    }
+
+    #[test]
+    fn test_is_permission_error_string_operation_not_permitted() {
+        let err = io::Error::other("Operation not permitted");
+        assert!(is_permission_error(&err));
+    }
+
+    #[test]
+    fn test_is_permission_error_non_permission() {
+        let err = io::Error::new(io::ErrorKind::NotFound, "file not found");
+        assert!(!is_permission_error(&err));
+    }
+
+    #[test]
+    fn test_is_permission_error_io_busy() {
+        let err = io::Error::new(io::ErrorKind::WouldBlock, "resource busy");
+        assert!(!is_permission_error(&err));
+    }
+}
+
 #[cfg(all(target_os = "linux", not(tarpaulin)))]
 #[tokio::test]
 async fn test_real_bridge_manager_lifecycle() -> Result<(), Box<dyn std::error::Error>> {

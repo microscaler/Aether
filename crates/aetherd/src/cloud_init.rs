@@ -187,4 +187,123 @@ mod tests {
         drop(iso);
         assert!(!path.exists());
     }
+
+    #[test]
+    fn test_cloud_init_config_serialization() {
+        let config = CloudInitConfig {
+            instance_id: "i-abc123".to_string(),
+            hostname: "myvm".to_string(),
+            user_data: "#cloud-config\nruncmd:\n  - echo hello\n".to_string(),
+        };
+        let serialized = serde_json::to_string(&config).unwrap();
+        assert!(serialized.contains("i-abc123"));
+        assert!(serialized.contains("myvm"));
+        assert!(serialized.contains("runcmd"));
+
+        let deserialized: CloudInitConfig = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.instance_id, "i-abc123");
+        assert_eq!(deserialized.hostname, "myvm");
+        assert_eq!(
+            deserialized.user_data,
+            "#cloud-config\nruncmd:\n  - echo hello\n"
+        );
+    }
+
+    #[test]
+    fn test_cloud_init_config_default_instance_id() {
+        let config = CloudInitConfig {
+            instance_id: String::new(),
+            hostname: String::new(),
+            user_data: String::new(),
+        };
+        let serialized = serde_json::to_string(&config).unwrap();
+        let deserialized: CloudInitConfig = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.instance_id, "");
+        assert_eq!(deserialized.hostname, "");
+    }
+
+    /// Test mock ISO compilation path.
+    /// Skipped when xorriso/mkisofs is present (modifying PATH leaks to other tests
+    /// in tarpaulin's single-process mode).
+    #[tokio::test]
+    async fn test_cloud_init_mock_compilation() {
+        // Check if xorriso or mkisofs is available
+        let has_xorriso = tokio::process::Command::new("which")
+            .arg("xorriso")
+            .status()
+            .await
+            .map(|s| s.success())
+            .unwrap_or(false);
+        let has_mkisofs = tokio::process::Command::new("which")
+            .arg("mkisofs")
+            .status()
+            .await
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        if has_xorriso || has_mkisofs {
+            println!("Skipping mock ISO test: xorriso/mkisofs found on system");
+            return;
+        }
+
+        let config = CloudInitConfig {
+            instance_id: "i-mock-test".to_string(),
+            hostname: "mock-host".to_string(),
+            user_data: "#cloud-config\n".to_string(),
+        };
+
+        let builder = CloudInitIsoBuilder::new(config);
+        let iso = builder.build_iso().await.unwrap();
+
+        let iso_path = iso.path().to_path_buf();
+
+        // Use std::fs::read (bytes) since ISOs are binary, not UTF-8 text
+        let iso_bytes = std::fs::read(&iso_path).unwrap();
+        // Should contain our mock marker content
+        assert!(iso_bytes.starts_with(b"mock_iso_content"));
+
+        // Cleanup
+        drop(iso);
+        assert!(!iso_path.exists());
+    }
+    #[tokio::test]
+    async fn test_cloud_init_iso_path() {
+        let config = CloudInitConfig {
+            instance_id: "i-path-test".to_string(),
+            hostname: "path-host".to_string(),
+            user_data: "test".to_string(),
+        };
+        let builder = CloudInitIsoBuilder::new(config);
+        let iso = builder.build_iso().await.unwrap();
+
+        let path = iso.path();
+        assert!(path.ends_with("seed.iso"));
+    }
+
+    #[tokio::test]
+    async fn test_cloud_init_user_data_preserved() {
+        let user_data = "#cloud-config\npassword: test\nchpasswd: { expire: false }\nssh_authorized_keys:\n  - ssh-rsa AAAAB3... test@example\n";
+        let config = CloudInitConfig {
+            instance_id: "i-data-test".to_string(),
+            hostname: "data-host".to_string(),
+            user_data: user_data.to_string(),
+        };
+
+        let builder = CloudInitIsoBuilder::new(config);
+        let iso = builder.build_iso().await.unwrap();
+
+        let iso_path = iso.path().to_path_buf();
+        // seed.iso lives at temp_dir root, input/ is a sibling
+        let input_dir = iso_path.parent().unwrap().join("input");
+        let user_data_content = tokio::fs::read_to_string(input_dir.join("user-data"))
+            .await
+            .unwrap();
+        assert_eq!(user_data_content, user_data);
+
+        let meta_data_content = tokio::fs::read_to_string(input_dir.join("meta-data"))
+            .await
+            .unwrap();
+        assert!(meta_data_content.contains("i-data-test"));
+        assert!(meta_data_content.contains("data-host"));
+    }
 }
