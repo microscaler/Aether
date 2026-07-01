@@ -62,11 +62,7 @@ impl QemuHypervisor {
         use nix::unistd::Pid;
 
         let pid = Pid::from_raw(pid as i32);
-        match kill(pid, None) {
-            Ok(_) => true,
-            Err(nix::errno::Errno::EPERM) => true,
-            _ => false,
-        }
+        matches!(kill(pid, None), Ok(_) | Err(nix::errno::Errno::EPERM))
     }
 
     /// Cleans up host network bridges and ZVOL/disk mappings if VM terminates.

@@ -1,20 +1,20 @@
 # Coverage Report (excl. main.rs)
 
-**2654** / **2914** lines covered — **91.08%**
+**3212** / **3690** lines covered — **87.05%**
 
 **Threshold:** 80% | **Status:** ✅ PASS
 
 | Crate | Files | Covered | Total | Coverage |
 | --- | --- | --- | --- | --- |
-| `aether-aggregator` | 11 | 1390 | 1509 | 92.1% |
+| `aether-aggregator` | 11 | 1390 | 1535 | 90.6% |
 | `aether-auth` | 3 | 175 | 189 | 92.6% |
-| `aetherd` | 18 | 1089 | 1216 | 89.6% |
+| `aetherd` | 25 | 1647 | 1966 | 83.8% |
 
 ## `aether-aggregator`
 
 ### crates/aether-aggregator/tests/auction_convergence_timing.rs
 
-- Coverage: 🟡 **79.0%** (83/105 lines)
+- Coverage: 🟡 **70.3%** (83/118 lines)
 - **Missed lines:**
   - Lines 43-45
   - Line 47
@@ -25,11 +25,19 @@
   - Line 63
   - Lines 65-67
   - Lines 69-70
-  - Lines 94-95
+  - Lines 72-74
+  - Lines 76-77
+  - Line 79
+  - Line 82
+  - Lines 84-86
+  - Line 88
+  - Line 90
+  - Line 92
+  - Lines 116-117
 
 ### crates/aether-aggregator/tests/deterministic_scheduling_selection.rs
 
-- Coverage: 🟡 **81.8%** (99/121 lines)
+- Coverage: 🟡 **73.9%** (99/134 lines)
 - **Missed lines:**
   - Lines 40-42
   - Line 44
@@ -40,7 +48,15 @@
   - Line 60
   - Lines 62-64
   - Lines 66-67
-  - Lines 89-90
+  - Lines 69-71
+  - Lines 73-74
+  - Line 76
+  - Line 79
+  - Lines 81-83
+  - Line 85
+  - Line 87
+  - Line 89
+  - Lines 111-112
 
 ### crates/aether-aggregator/src/network/hpe_vc.rs
 
@@ -170,26 +186,157 @@
 
 ## `aetherd`
 
+### crates/aetherd/src/storage/iscsi.rs
+
+- Coverage: 🔴 **0.0%** (0/25 lines)
+- **Missed lines:**
+  - Lines 34-36
+  - Line 38
+  - Lines 40-41
+  - Lines 44-45
+  - Line 47
+  - Line 50
+  - Line 53
+  - Lines 55-56
+  - Line 58
+  - Line 62
+  - Lines 65-67
+  - Lines 69-70
+  - Lines 73-75
+  - Lines 77-78
+
+### crates/aetherd/src/migration/memory.rs
+
+- Coverage: 🔴 **29.4%** (5/17 lines)
+- **Missed lines:**
+  - Lines 34-35
+  - Lines 38-40
+  - Line 42
+  - Line 44
+  - Line 46
+  - Lines 48-49
+  - Line 51
+  - Line 54
+
+### crates/aetherd/src/migration/socket.rs
+
+- Coverage: 🔴 **50.0%** (63/126 lines)
+- **Missed lines:**
+  - Lines 65-69
+  - Line 72
+  - Lines 74-75
+  - Line 77
+  - Line 82
+  - Line 92
+  - Lines 95-100
+  - Lines 103-105
+  - Lines 107-108
+  - Line 167
+  - Lines 173-175
+  - Line 177
+  - Lines 180-181
+  - Lines 186-189
+  - Line 191
+  - Lines 194-197
+  - Line 199
+  - Line 202
+  - Line 205
+  - Lines 207-208
+  - Lines 212-218
+  - Lines 221-223
+  - Line 296
+  - Lines 303-304
+  - Line 357
+  - Line 416
+  - Line 418
+  - Lines 424-426
+  - Line 428
+
+### crates/aetherd/src/migration/converge.rs
+
+- Coverage: 🔴 **57.1%** (4/7 lines)
+- **Missed lines:**
+  - Lines 26-28
+
+### crates/aetherd/src/lib.rs
+
+- Coverage: 🔴 **60.5%** (89/147 lines)
+- **Missed lines:**
+  - Line 154
+  - Lines 186-191
+  - Lines 193-196
+  - Line 198
+  - Lines 203-204
+  - Line 206
+  - Lines 214-215
+  - Line 217
+  - Lines 221-222
+  - Lines 228-231
+  - Lines 233-234
+  - Line 237
+  - Line 247
+  - Line 301
+  - Line 309
+  - Line 328
+  - Lines 332-335
+  - Lines 337-340
+  - Lines 342-343
+  - Line 345
+  - Line 350
+  - Lines 354-357
+  - Lines 360-364
+  - Lines 367-370
+  - Line 372
+  - Line 374
+
 ### crates/aetherd/src/hypervisor/qemu.rs
 
-- Coverage: 🟡 **76.6%** (105/137 lines)
+- Coverage: 🟡 **71.2%** (171/240 lines)
 - **Missed lines:**
-  - Line 67
-  - Line 125
-  - Line 144
-  - Lines 147-148
-  - Line 152
-  - Lines 163-169
-  - Lines 171-172
-  - Lines 177-178
-  - Lines 183-185
-  - Lines 189-190
-  - Line 193
-  - Lines 232-233
-  - Lines 253-255
-  - Line 281
-  - Lines 289-290
-  - Line 296
+  - Line 122
+  - Line 141
+  - Lines 144-145
+  - Line 149
+  - Line 167
+  - Line 203
+  - Line 242
+  - Line 261
+  - Lines 267-269
+  - Lines 273-276
+  - Lines 278-280
+  - Line 282
+  - Lines 286-292
+  - Lines 294-295
+  - Line 309
+  - Lines 315-317
+  - Lines 321-324
+  - Lines 326-328
+  - Line 330
+  - Lines 340-346
+  - Lines 348-349
+  - Lines 354-355
+  - Lines 360-362
+  - Lines 366-367
+  - Line 370
+  - Lines 409-410
+  - Lines 431-433
+  - Line 456
+  - Lines 464-465
+  - Line 471
+  - Lines 475-476
+
+### crates/aetherd/src/telemetry.rs
+
+- Coverage: 🟡 **76.2%** (64/84 lines)
+- **Missed lines:**
+  - Lines 168-177
+  - Line 182
+  - Lines 206-207
+  - Line 215
+  - Lines 217-218
+  - Line 223
+  - Lines 225-226
+  - Line 231
 
 ### crates/aetherd/tests/cloud_init_iso_guest_boot.rs
 
@@ -198,35 +345,6 @@
   - Line 25
   - Line 42
   - Lines 49-53
-
-### crates/aetherd/src/telemetry.rs
-
-- Coverage: 🟡 **79.0%** (83/105 lines)
-- **Missed lines:**
-  - Line 151
-  - Line 153
-  - Lines 200-209
-  - Line 214
-  - Lines 238-239
-  - Line 247
-  - Lines 249-250
-  - Line 255
-  - Lines 257-258
-  - Line 263
-
-### crates/aetherd/src/lib.rs
-
-- Coverage: 🟡 **81.1%** (77/95 lines)
-- **Missed lines:**
-  - Line 149
-  - Lines 181-184
-  - Lines 192-193
-  - Line 195
-  - Lines 199-200
-  - Lines 206-209
-  - Lines 211-212
-  - Line 215
-  - Line 263
 
 ### crates/aetherd/src/storage/zfs.rs
 
@@ -244,14 +362,6 @@
   - Line 310
   - Lines 341-343
 
-### crates/aetherd/src/bidder.rs
-
-- Coverage: 🟡 **89.3%** (25/28 lines)
-- **Missed lines:**
-  - Line 49
-  - Line 62
-  - Line 92
-
 ### crates/aetherd/tests/firecracker_vm_boot_lifecycle.rs
 
 - Coverage: 🟡 **89.5%** (34/38 lines)
@@ -261,6 +371,22 @@
   - Line 37
   - Line 53
 
+### crates/aetherd/src/bidder.rs
+
+- Coverage: 🟡 **89.7%** (26/29 lines)
+- **Missed lines:**
+  - Line 49
+  - Line 62
+  - Line 92
+
+### crates/aetherd/src/migration/mod.rs
+
+- Coverage: 🟢 **90.4%** (66/73 lines)
+- **Missed lines:**
+  - Line 104
+  - Lines 117-118
+  - Lines 125-128
+
 ### crates/aetherd/src/cloud_init.rs
 
 - Coverage: 🟢 **93.2%** (69/74 lines)
@@ -268,31 +394,6 @@
   - Line 75
   - Lines 79-80
   - Lines 164-165
-
-### crates/aetherd/src/hypervisor/firecracker.rs
-
-- Coverage: 🟢 **93.4%** (85/91 lines)
-- **Missed lines:**
-  - Lines 178-179
-  - Line 183
-  - Lines 241-242
-  - Line 279
-
-### crates/aetherd/tests/node_tests.rs
-
-- Coverage: 🟢 **93.9%** (168/179 lines)
-- **Missed lines:**
-  - Line 33
-  - Line 50
-  - Line 78
-  - Line 114
-  - Line 132
-  - Line 144
-  - Line 176
-  - Line 186
-  - Line 200
-  - Line 236
-  - Line 248
 
 ### crates/aetherd/tests/zfs_thin_provisioning_limits.rs
 
@@ -302,6 +403,30 @@
   - Line 39
   - Line 67
 
+### crates/aetherd/tests/node_tests.rs
+
+- Coverage: 🟢 **94.4%** (184/195 lines)
+- **Missed lines:**
+  - Line 35
+  - Line 52
+  - Line 85
+  - Line 126
+  - Line 144
+  - Line 156
+  - Line 193
+  - Line 203
+  - Line 217
+  - Line 258
+  - Line 270
+
+### crates/aetherd/src/hypervisor/firecracker.rs
+
+- Coverage: 🟢 **95.6%** (87/91 lines)
+- **Missed lines:**
+  - Lines 178-179
+  - Line 183
+  - Line 280
+
 ### crates/aetherd/tests/vlan_isolation_verification.rs
 
 - Coverage: 🟢 **96.9%** (62/64 lines)
@@ -309,11 +434,27 @@
   - Line 29
   - Line 31
 
+### crates/aetherd/tests/migration_tests.rs
+
+- Coverage: 🟢 **97.4%** (332/341 lines)
+- **Missed lines:**
+  - Lines 28-29
+  - Line 160
+  - Line 200
+  - Line 225
+  - Line 250
+  - Lines 413-414
+  - Line 496
+
 ### crates/aetherd/tests/vsock_stream_performance.rs
 
 - Coverage: 🟢 **98.4%** (60/61 lines)
 - **Missed lines:**
   - Line 93
+
+### crates/aetherd/src/migration/block.rs
+
+- Coverage: 🟢 **100.0%** (10/10 lines)
 
 ### crates/aetherd/src/network/bridge.rs
 

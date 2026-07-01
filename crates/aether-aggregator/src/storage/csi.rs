@@ -653,6 +653,10 @@ impl Node for AetherCsiDriver {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
+#[allow(clippy::expect_used)]
+#[allow(clippy::panic)]
+#[allow(clippy::needless_update)]
 mod tests {
     use super::*;
     use aether_auth::csi::{

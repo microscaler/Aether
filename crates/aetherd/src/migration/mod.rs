@@ -96,18 +96,37 @@ impl MigrationManager for RealMigrationManager {
             .get(vm_id)
             .ok_or_else(|| format!("VM {} not found", vm_id))?;
 
-        let migrator = memory::MemoryMigrator::new(qmp_socket.clone());
         let uri = socket::get_migration_uri(&params.destination_ip, params.port, params.use_tls);
 
-        // 1. Enable auto-converge if requested (defaulting to true for now to ensure convergence)
+        // 1. Enable auto-converge (ensures convergence under write-heavy loads)
         let convergence = converge::ConvergenceManager::new(qmp_socket.clone());
-        convergence.enable_auto_converge().await?;
+        if let Err(e) = convergence.enable_auto_converge().await {
+            return Err(format!("Failed to enable auto-converge: {}", e));
+        }
 
-        // 2. Start mirroring if there are drives (simplified here)
-        // (Placeholder for drive discovery and mirroring)
+        // 2. Start block replication (drive-mirror over NBD)
+        // In production, discover block devices from the VM and mirror each one.
+        // For now, mirror the root device as a representative.
+        let block_repl = block::BlockReplicator::new(qmp_socket.clone());
+        let remote_nbd_uri = format!("nbd:{}:{}", params.destination_ip, params.port);
+        if let Err(e) = block_repl
+            .start_mirroring("drive-root", &remote_nbd_uri)
+            .await
+        {
+            // Rollback: disable auto-converge to avoid leaving the VM throttled
+            let _ = convergence.disable_auto_converge().await;
+            return Err(format!("Block replication failed: {}", e));
+        }
 
         // 3. Start memory migration
-        migrator.start_migration(&uri).await?;
+        let migrator = memory::MemoryMigrator::new(qmp_socket.clone());
+        if let Err(e) = migrator.start_migration(&uri).await {
+            // Rollback: disable auto-converge and cancel block mirroring
+            let _ = convergence.disable_auto_converge().await;
+            let qmp = crate::hypervisor::qemu::QmpClient::new(qmp_socket.clone());
+            let _ = qmp.block_job_complete("drive-root").await;
+            return Err(format!("Memory migration failed: {e}"));
+        }
 
         Ok(())
     }
@@ -119,10 +138,14 @@ impl MigrationManager for RealMigrationManager {
             .ok_or_else(|| format!("VM {} not found", vm_id))?;
 
         // 1. Start the migration listener with attestation verification
-        let socket_manager = socket::MigrationSocketManager::new(self.bind_addr.clone());
-        let _actual_port = socket_manager
-            .listen_for_incoming(port, "ephemeral-migration-token")
-            .await?;
+        // Use hardcoded attestation secret for now; in production this would come
+        // from the node's configuration or a secrets manager.
+        let attestation_secret = b"aether-migration-secret".to_vec();
+        let socket_manager = socket::MigrationSocketManager::new_with_secret(
+            self.bind_addr.clone(),
+            attestation_secret,
+        );
+        let _actual_port = socket_manager.listen_for_incoming(port, vm_id).await?;
 
         let block_repl = block::BlockReplicator::new(qmp_socket.clone());
         let listen_addr = format!("0.0.0.0:{}", port);
@@ -161,9 +184,9 @@ impl MigrationManager for RealMigrationManager {
             .get(vm_id)
             .ok_or_else(|| format!("VM {} not found", vm_id))?;
 
-        // Send migrate_cancel command
-        let _qmp = crate::hypervisor::qemu::QmpClient::new(qmp_socket.clone());
-        // Placeholder for qmp.migrate_cancel().await?;
+        let qmp = crate::hypervisor::qemu::QmpClient::new(qmp_socket.clone());
+        qmp.migrate_cancel().await?;
+
         Ok(())
     }
 
