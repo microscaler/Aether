@@ -78,8 +78,21 @@ async fn find_block_device_in_session(session_path: &Path) -> io::Result<String>
 /// attribute matches `target_iqn`, then walk its SCSI device tree to locate
 /// the corresponding block device.  Returns the full `/dev/<name>` path.
 ///
-/// The `sysfs_root` parameter is `/sys` in production and a tempdir in tests,
-/// which keeps this function fully unit-testable without root or real hardware.
+/// # Arguments
+/// * `target_iqn`  – The iSCSI Qualified Name to look up (e.g.
+///   `iqn.2024-01.com.example:vol1`).
+/// * `sysfs_root`  – Root of the sysfs filesystem tree.  Pass `/sys` in
+///   production; pass a `tempdir` path in unit tests so the function can
+///   be exercised without root privileges or real iSCSI hardware.
+///
+/// # Returns
+/// The absolute `/dev/<name>` path of the block device associated with the
+/// session (e.g. `/dev/sdb`).
+///
+/// # Errors
+/// Returns `io::ErrorKind::NotFound` when no session matching `target_iqn`
+/// exists, or when the matching session has no visible block device yet.
+/// Returns other `io::Error` variants on filesystem read failures.
 pub async fn find_iscsi_block_device(
     target_iqn: &str,
     sysfs_root: &Path,
@@ -245,6 +258,29 @@ impl Default for MockIscsiManager {
     }
 }
 
+/// Convert a monotone counter into a Linux-style sd-device suffix.
+///
+/// Follows the kernel naming convention (skipping `a` to avoid `sda`):
+/// `0` → `"b"`, `1` → `"c"`, …, `24` → `"z"`,
+/// `25` → `"aa"`, `26` → `"ab"`, …
+/// The mapping is injective for all `u32` values so device names are
+/// always unique regardless of logout/login cycling.
+fn counter_to_sdname(n: u32) -> String {
+    // Shift by 1 so index 0 produces 'b' instead of 'a'.
+    let mut val = n as usize + 1;
+    let mut chars: Vec<u8> = Vec::new();
+    loop {
+        chars.push(b'a' + (val % 26) as u8);
+        val /= 26;
+        if val == 0 {
+            break;
+        }
+        val -= 1; // adjust for the 1-indexed shift
+    }
+    chars.reverse();
+    chars.iter().map(|&b| b as char).collect()
+}
+
 #[async_trait]
 impl IscsiManager for MockIscsiManager {
     async fn discover_targets(&self, portal_ip: &str) -> io::Result<Vec<String>> {
@@ -258,10 +294,11 @@ impl IscsiManager for MockIscsiManager {
         if let Some(path) = state.sessions.get(target_iqn) {
             return Ok(path.clone());
         }
-        // Assign the next available mock device letter (b, c, d, …)
-        const DEV_LETTERS: &[u8] = b"bcdefghijklmnopqrstuvwxyz";
-        let idx = (state.device_counter as usize) % DEV_LETTERS.len();
-        let dev_name = format!("/dev/sd{}", DEV_LETTERS[idx] as char);
+        // Generate a unique device name following Linux sd-naming conventions:
+        // 0 → sdb, 1 → sdc, …, 24 → sdz, 25 → sdaa, 26 → sdab, …
+        // The counter is strictly monotone so names never collide even after
+        // repeated logout/login cycles on many volumes.
+        let dev_name = format!("/dev/sd{}", counter_to_sdname(state.device_counter));
         state.device_counter += 1;
         state.sessions.insert(target_iqn.to_string(), dev_name.clone());
         Ok(dev_name)
@@ -379,20 +416,22 @@ mod tests {
 
         mgr.logout_target(iqn).await.expect("logout failed");
 
-        // A new login after logout should succeed and could reuse a device letter
+        // After logout, a new login allocates the next counter slot so the
+        // device path must differ from the one assigned before logout.
         let path_after = mgr
             .login_target("10.0.0.1", iqn)
             .await
-            .expect("re-login failed");
-        // The important thing is the re-login succeeds; it may or may not get
-        // the same letter depending on counter position – just verify it's valid.
+            .expect("re-login after logout failed");
+
         assert!(
             path_after.starts_with("/dev/sd"),
             "Expected /dev/sdX after re-login, got: {}",
             path_after
         );
-        // Suppress the unused variable warning
-        let _ = path_before;
+        assert_ne!(
+            path_before, path_after,
+            "Re-login after logout should allocate a new device path"
+        );
     }
 
     #[tokio::test]
