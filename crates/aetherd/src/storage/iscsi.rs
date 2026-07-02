@@ -93,10 +93,7 @@ async fn find_block_device_in_session(session_path: &Path) -> io::Result<String>
 /// Returns `io::ErrorKind::NotFound` when no session matching `target_iqn`
 /// exists, or when the matching session has no visible block device yet.
 /// Returns other `io::Error` variants on filesystem read failures.
-pub async fn find_iscsi_block_device(
-    target_iqn: &str,
-    sysfs_root: &Path,
-) -> io::Result<String> {
+pub async fn find_iscsi_block_device(target_iqn: &str, sysfs_root: &Path) -> io::Result<String> {
     let sessions_dir = sysfs_root.join("class/iscsi_session");
     let mut dir = tokio::fs::read_dir(&sessions_dir).await?;
 
@@ -300,7 +297,9 @@ impl IscsiManager for MockIscsiManager {
         // repeated logout/login cycles on many volumes.
         let dev_name = format!("/dev/sd{}", counter_to_sdname(state.device_counter));
         state.device_counter += 1;
-        state.sessions.insert(target_iqn.to_string(), dev_name.clone());
+        state
+            .sessions
+            .insert(target_iqn.to_string(), dev_name.clone());
         Ok(dev_name)
     }
 
@@ -471,10 +470,7 @@ mod tests {
         .enumerate()
         {
             let session = format!("session{}", idx);
-            let base = root
-                .join("class")
-                .join("iscsi_session")
-                .join(&session);
+            let base = root.join("class").join("iscsi_session").join(&session);
             fs::create_dir_all(&base).await.expect("mkdir session");
             fs::write(base.join("targetname"), iqn)
                 .await
@@ -482,7 +478,11 @@ mod tests {
 
             let target_dir = format!("target{}:0:0", idx);
             let lun_dir = format!("{}:0:0:0", idx);
-            let block_dev = base.join(&target_dir).join(&lun_dir).join("block").join(dev);
+            let block_dev = base
+                .join(&target_dir)
+                .join(&lun_dir)
+                .join("block")
+                .join(dev);
             fs::create_dir_all(&block_dev)
                 .await
                 .expect("mkdir block device");
@@ -494,8 +494,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         build_fake_sysfs(dir.path()).await;
 
-        let result =
-            find_iscsi_block_device("iqn.2024-01.com.example:vol1", dir.path()).await;
+        let result = find_iscsi_block_device("iqn.2024-01.com.example:vol1", dir.path()).await;
         assert_eq!(result.expect("should find vol1"), "/dev/sdb");
     }
 
@@ -504,8 +503,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         build_fake_sysfs(dir.path()).await;
 
-        let result =
-            find_iscsi_block_device("iqn.2024-01.com.example:vol2", dir.path()).await;
+        let result = find_iscsi_block_device("iqn.2024-01.com.example:vol2", dir.path()).await;
         assert_eq!(result.expect("should find vol2"), "/dev/sdc");
     }
 
