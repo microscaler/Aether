@@ -220,7 +220,7 @@ struct MockIscsiState {
     /// Discoverable targets per portal: portal_ip → Vec<IQN>
     targets: HashMap<String, Vec<String>>,
     /// Monotone counter used to produce unique mock device paths
-    device_counter: u32,
+    device_counter: usize,
 }
 
 /// Simulated iSCSI manager for unit tests and CI environments that lack real
@@ -262,10 +262,10 @@ impl Default for MockIscsiManager {
 /// `25` → `"aa"`, `26` → `"ab"`, …
 /// The mapping is injective for all `u32` values so device names are
 /// always unique regardless of logout/login cycling.
-fn counter_to_sdname(n: u32) -> String {
+fn counter_to_sdname(n: usize) -> String {
     const ALPHABET: &[u8; 26] = b"abcdefghijklmnopqrstuvwxyz";
     // Shift by 1 so index 0 produces 'b' instead of 'a'.
-    let mut val = usize::from(n) + 1;
+    let mut val = n + 1;
     let mut chars: Vec<char> = Vec::new();
     loop {
         chars.push(char::from(ALPHABET[val % 26]));
