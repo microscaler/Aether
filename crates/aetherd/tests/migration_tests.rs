@@ -82,19 +82,20 @@ async fn test_register_and_unregister_vm() {
         .register_vm("vm-1", "/tmp/qmp-vm1.sock")
         .await
         .unwrap();
-    assert_eq!(manager.get_active_migration_count().await, 1);
+    // Registration does not start a migration, so count stays 0
+    assert_eq!(manager.get_active_migration_count().await, 0);
 
     manager
         .register_vm("vm-2", "/tmp/qmp-vm2.sock")
         .await
         .unwrap();
-    assert_eq!(manager.get_active_migration_count().await, 2);
+    assert_eq!(manager.get_active_migration_count().await, 0);
 
     manager.unregister_vm("vm-1").await.unwrap();
-    assert_eq!(manager.get_active_migration_count().await, 1);
+    assert_eq!(manager.get_active_migration_count().await, 0);
 
     manager.unregister_vm("nonexistent").await.unwrap();
-    assert_eq!(manager.get_active_migration_count().await, 1);
+    assert_eq!(manager.get_active_migration_count().await, 0);
 }
 
 #[tokio::test]
@@ -110,7 +111,7 @@ async fn test_register_vm_twice() {
         .register_vm("vm-x", "/tmp/qmp-x2.sock")
         .await
         .unwrap();
-    assert_eq!(manager.get_active_migration_count().await, 1);
+    assert_eq!(manager.get_active_migration_count().await, 0);
 }
 
 #[tokio::test]
@@ -123,7 +124,8 @@ async fn test_multiple_vm_registration() {
             .await
             .unwrap();
     }
-    assert_eq!(manager.get_active_migration_count().await, 5);
+    // Registration does not start migrations
+    assert_eq!(manager.get_active_migration_count().await, 0);
 
     for i in 0..5u32 {
         manager.unregister_vm(&format!("vm-{}", i)).await.unwrap();
@@ -305,8 +307,10 @@ async fn test_prepare_incoming_with_tls() {
         .await
         .unwrap();
 
+    // Without TLS cert paths configured, TLS should be rejected
     let result = manager.prepare_incoming("vm-tls-in", 5555, true).await;
-    assert!(result.is_ok());
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("TLS requested but CA cert"));
 }
 
 #[tokio::test]

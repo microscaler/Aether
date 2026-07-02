@@ -43,8 +43,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bidder = Arc::new(aetherd::bidder::Bidder::new(
         aetherd::bidder::BidderConfig::default(),
     ));
-    let migration_manager = Arc::new(aetherd::migration::RealMigrationManager::new(
+    let migration_manager = Arc::new(aetherd::migration::RealMigrationManager::new_full(
         "127.0.0.1".to_string(),
+        b"aether-migration-secret".to_vec(),
+        String::new(),
+        String::new(),
+        String::new(),
     ));
     let iscsi_manager = Arc::new(aetherd::storage::iscsi::RealIscsiManager);
 

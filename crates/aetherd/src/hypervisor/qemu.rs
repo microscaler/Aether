@@ -6,6 +6,7 @@
 use crate::hypervisor::Hypervisor;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
@@ -91,95 +92,123 @@ impl QmpClient {
             stream
                 .read_exact(&mut byte)
                 .await
-                .map_err(|e| format!("Failed to read QMP byte: {}", e))?;
+                .map_err(|e| format!("Failed to read QMP byte: {e}"))?;
             buf.push(byte[0]);
             if byte[0] == b'\n' {
                 break;
             }
         }
-        String::from_utf8(buf).map_err(|e| format!("Invalid UTF-8 in QMP response: {}", e))
+        String::from_utf8(buf).map_err(|e| format!("Invalid UTF-8 in QMP response: {e}"))
     }
 
-    /// Establishes connection and completes capability negotiation handshake.
-    pub async fn connect_and_negotiate(&self) -> Result<UnixStream, String> {
+    /// Connects and negotiates QMP capabilities.
+    async fn connect_and_negotiate(&self) -> Result<UnixStream, String> {
         let mut stream = UnixStream::connect(&self.socket_path)
             .await
-            .map_err(|e| format!("Failed to connect to QMP socket: {}", e))?;
+            .map_err(|e| format!("Failed to connect to QMP socket: {e}"))?;
 
         // Read greeting
         let _greeting = Self::read_line(&mut stream).await?;
 
-        // Send negotiation
-        let cmd = "{\"execute\": \"qmp_capabilities\"}\n";
+        // Send capabilities negotiation using serde_json
+        let cmd = json!({"execute": "qmp_capabilities"});
         stream
-            .write_all(cmd.as_bytes())
+            .write_all(format!("{}\n", cmd).as_bytes())
             .await
-            .map_err(|e| format!("Failed to write QMP capabilities negotiation: {}", e))?;
+            .map_err(|e| format!("Failed to write QMP capabilities negotiation: {e}"))?;
 
         // Read response
         let resp = Self::read_line(&mut stream).await?;
-        if !resp.contains("\"return\"") {
-            return Err(format!("QMP capability negotiation failed: {}", resp));
+        let json = serde_json::from_str::<serde_json::Value>(&resp)
+            .map_err(|e| format!("Failed to parse QMP response: {e}"))?;
+        if json.get("return").is_some() {
+            Ok(stream)
+        } else {
+            Err(format!("QMP capability negotiation failed: {resp}"))
+        }
+    }
+
+    /// Sends a QMP command and returns the raw response string.
+    async fn send_command(
+        &self,
+        mut stream: UnixStream,
+        cmd: serde_json::Value,
+    ) -> Result<String, String> {
+        stream
+            .write_all(format!("{}\n", cmd).as_bytes())
+            .await
+            .map_err(|e| format!("Failed to dispatch QMP command: {e}"))?;
+
+        let resp = Self::read_line(&mut stream).await?;
+        Ok(resp)
+    }
+
+    /// Sends a QMP command and checks for errors in the response.
+    /// Returns Ok(()) on success, Err on error.
+    async fn send_command_checked(
+        &self,
+        stream: UnixStream,
+        cmd: serde_json::Value,
+        error_prefix: &str,
+    ) -> Result<(), String> {
+        let mut stream = stream;
+        stream
+            .write_all(format!("{}\n", cmd).as_bytes())
+            .await
+            .map_err(|e| format!("Failed to dispatch {error_prefix}: {e}"))?;
+
+        let resp = Self::read_line(&mut stream).await?;
+        let value = serde_json::from_str::<serde_json::Value>(&resp)
+            .map_err(|e| format!("Failed to parse {error_prefix} response: {e}"))?;
+
+        if value.get("error").is_some() {
+            return Err(format!("{error_prefix} failed: {resp}"));
         }
 
-        Ok(stream)
+        Ok(())
     }
 
     /// Queries the internal VM status using query-status.
     pub async fn query_status(&self) -> Result<String, String> {
-        let mut stream = self.connect_and_negotiate().await?;
+        let stream = self.connect_and_negotiate().await?;
 
-        let cmd = "{\"execute\": \"query-status\"}\n";
-        stream
-            .write_all(cmd.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to dispatch query-status: {}", e))?;
+        let cmd = json!({"execute": "query-status"});
+        let resp = self.send_command(stream, cmd).await?;
 
-        let resp = Self::read_line(&mut stream).await?;
-
-        if resp.contains("\"status\":\"paused\"") || resp.contains("\"status\": \"paused\"") {
-            Ok("PAUSED".to_string())
-        } else if resp.contains("\"status\":\"running\"")
-            || resp.contains("\"status\": \"running\"")
-            || resp.contains("\"running\":true")
-            || resp.contains("\"running\": true")
-        {
-            Ok("RUNNING".to_string())
-        } else {
-            Ok("STOPPED".to_string())
+        // Parse status field robustly with serde_json
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&resp) {
+            if let Some(status) = json
+                .get("return")
+                .and_then(|v| v.get("status"))
+                .and_then(|v| v.as_str())
+            {
+                return match status {
+                    "paused" => Ok("PAUSED".to_string()),
+                    "running" => Ok("RUNNING".to_string()),
+                    _ => Ok("STOPPED".to_string()),
+                };
+            }
         }
+        Ok("STOPPED".to_string())
     }
 
     /// Initiates a migration to the given URI.
     pub async fn migrate(&self, uri: &str) -> Result<(), String> {
-        let mut stream = self.connect_and_negotiate().await?;
-        let cmd = format!(
-            "{{\"execute\": \"migrate\", \"arguments\": {{\"uri\": \"{}\"}}}} \n",
-            uri
-        );
-        stream
-            .write_all(cmd.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to dispatch migrate: {}", e))?;
+        let stream = self.connect_and_negotiate().await?;
 
-        let resp = Self::read_line(&mut stream).await?;
-        if resp.contains("\"error\"") {
-            return Err(format!("Migration failed: {}", resp));
-        }
-        Ok(())
+        let cmd = json!({
+            "execute": "migrate",
+            "arguments": { "uri": uri }
+        });
+        self.send_command_checked(stream, cmd, "migrate").await
     }
 
     /// Queries the migration status.
     pub async fn query_migrate(&self) -> Result<String, String> {
-        let mut stream = self.connect_and_negotiate().await?;
-        let cmd = "{\"execute\": \"query-migrate\"}\n";
-        stream
-            .write_all(cmd.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to dispatch query-migrate: {}", e))?;
+        let stream = self.connect_and_negotiate().await?;
 
-        let resp = Self::read_line(&mut stream).await?;
-        Ok(resp)
+        let cmd = json!({"execute": "query-migrate"});
+        self.send_command(stream, cmd).await
     }
 
     /// Enables or disables a migration capability (e.g. "auto-converge").
@@ -188,146 +217,121 @@ impl QmpClient {
         capability: &str,
         state: bool,
     ) -> Result<(), String> {
-        let mut stream = self.connect_and_negotiate().await?;
-        let cmd = format!(
-            "{{\"execute\": \"migrate-set-capabilities\", \"arguments\": {{\"capabilities\": [{{ \"capability\": \"{}\", \"state\": {} }}] }}}}\n",
-            capability, state
-        );
-        stream
-            .write_all(cmd.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to set migration capability {}: {}", capability, e))?;
+        let stream = self.connect_and_negotiate().await?;
 
-        let resp = Self::read_line(&mut stream).await?;
-        if resp.contains("\"error\"") {
-            return Err(format!("Failed to set migration capability: {}", resp));
-        }
-        Ok(())
+        let cmd = json!({
+            "execute": "migrate-set-capabilities",
+            "arguments": {
+                "capabilities": [
+                    { "capability": capability, "state": state }
+                ]
+            }
+        });
+        self.send_command_checked(stream, cmd, "set migration capability")
+            .await
     }
 
-    /// Starts an NBD server on the given address.
+    /// Starts an NBD server on the given address (host:port format).
+    /// Handles both IPv4 and IPv6 addresses.
     pub async fn nbd_server_start(&self, addr: &str) -> Result<(), String> {
-        let mut stream = self.connect_and_negotiate().await?;
-        let cmd = format!(
-            "{{\"execute\": \"nbd-server-start\", \"arguments\": {{\"addr\": {{ \"type\": \"inet\", \"data\": {{ \"host\": \"{}\", \"port\": \"{}\" }} }} }} }}\n",
-            addr.split(':').next().unwrap_or("0.0.0.0"),
-            addr.split(':').nth(1).unwrap_or("10809")
-        );
-        stream
-            .write_all(cmd.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to start NBD server: {}", e))?;
+        let stream = self.connect_and_negotiate().await?;
 
-        let resp = Self::read_line(&mut stream).await?;
-        if resp.contains("\"error\"") {
-            return Err(format!("NBD server start failed: {}", resp));
-        }
-        Ok(())
+        // Parse host:port, handling IPv6 [::1]:port and plain host:port
+        let (host, port) = if addr.starts_with('[') {
+            // IPv6: [::1]:port
+            let end = addr
+                .find(']')
+                .ok_or_else(|| format!("Invalid IPv6 address in NBD addr: {addr}"))?;
+            let inner = &addr[1..end];
+            // Find the port after ']'
+            let port_str = addr[end + 1..].trim_start_matches(':');
+            (inner, port_str)
+        } else {
+            let parts: Vec<&str> = addr.rsplitn(2, ':').collect();
+            if parts.len() != 2 {
+                (addr, "10809")
+            } else {
+                (parts[1], parts[0])
+            }
+        };
+
+        let cmd = json!({
+            "execute": "nbd-server-start",
+            "arguments": {
+                "addr": { "type": "inet", "data": { "host": host, "port": port } }
+            }
+        });
+        self.send_command_checked(stream, cmd, "NBD server start")
+            .await
     }
 
     /// Adds a disk to the NBD server for mirroring.
     pub async fn nbd_server_add(&self, device: &str) -> Result<(), String> {
-        let mut stream = self.connect_and_negotiate().await?;
-        let cmd = format!(
-            "{{\"execute\": \"nbd-server-add\", \"arguments\": {{\"device\": \"{}\", \"writable\": true }} }}\n",
-            device
-        );
-        stream
-            .write_all(cmd.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to add device to NBD server: {}", e))?;
+        let stream = self.connect_and_negotiate().await?;
 
-        let resp = Self::read_line(&mut stream).await?;
-        if resp.contains("\"error\"") {
-            return Err(format!("NBD server add failed: {}", resp));
-        }
-        Ok(())
+        let cmd = json!({
+            "execute": "nbd-server-add",
+            "arguments": { "device": device, "writable": true }
+        });
+        self.send_command_checked(stream, cmd, "NBD server add")
+            .await
     }
 
     /// Initiates a drive mirror operation.
     pub async fn drive_mirror(&self, device: &str, target: &str) -> Result<(), String> {
-        let mut stream = self.connect_and_negotiate().await?;
-        let cmd = format!(
-            "{{\"execute\": \"drive-mirror\", \"arguments\": {{\"device\": \"{}\", \"target\": \"{}\", \"sync\": \"full\", \"mode\": \"existing\" }} }}\n",
-            device, target
-        );
-        stream
-            .write_all(cmd.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to dispatch drive-mirror: {}", e))?;
+        let stream = self.connect_and_negotiate().await?;
 
-        let resp = Self::read_line(&mut stream).await?;
-        if resp.contains("\"error\"") {
-            return Err(format!("Drive mirror failed: {}", resp));
-        }
-        Ok(())
+        let cmd = json!({
+            "execute": "drive-mirror",
+            "arguments": {
+                "device": device,
+                "target": target,
+                "sync": "full",
+                "mode": "existing"
+            }
+        });
+        self.send_command_checked(stream, cmd, "drive-mirror").await
     }
 
     /// Completes an active block job.
     pub async fn block_job_complete(&self, device: &str) -> Result<(), String> {
-        let mut stream = self.connect_and_negotiate().await?;
-        let cmd = format!(
-            "{{\"execute\": \"block-job-complete\", \"arguments\": {{\"device\": \"{}\" }} }}\n",
-            device
-        );
-        stream
-            .write_all(cmd.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to dispatch block-job-complete: {}", e))?;
+        let stream = self.connect_and_negotiate().await?;
 
-        let resp = Self::read_line(&mut stream).await?;
-        if resp.contains("\"error\"") {
-            return Err(format!("Block job complete failed: {}", resp));
-        }
-        Ok(())
+        let cmd = json!({
+            "execute": "block-job-complete",
+            "arguments": { "device": device }
+        });
+        self.send_command_checked(stream, cmd, "block-job-complete")
+            .await
     }
 
     /// Queries active block jobs.
     pub async fn query_block_jobs(&self) -> Result<String, String> {
-        let mut stream = self.connect_and_negotiate().await?;
-        let cmd = "{\"execute\": \"query-block-jobs\"}\n";
-        stream
-            .write_all(cmd.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to dispatch query-block-jobs: {}", e))?;
+        let stream = self.connect_and_negotiate().await?;
 
-        let resp = Self::read_line(&mut stream).await?;
-        Ok(resp)
+        let cmd = json!({"execute": "query-block-jobs"});
+        self.send_command(stream, cmd).await
     }
 
     /// Cancels an active migration.
     pub async fn migrate_cancel(&self) -> Result<(), String> {
-        let mut stream = self.connect_and_negotiate().await?;
-        let cmd = "{\"execute\": \"migrate_cancel\"}\n";
-        stream
-            .write_all(cmd.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to dispatch migrate_cancel: {}", e))?;
+        let stream = self.connect_and_negotiate().await?;
 
-        let resp = Self::read_line(&mut stream).await?;
-        if resp.contains("\"error\"") {
-            return Err(format!("Migrate cancel failed: {}", resp));
-        }
-        Ok(())
+        let cmd = json!({"execute": "migrate-cancel"});
+        self.send_command_checked(stream, cmd, "migrate-cancel")
+            .await
     }
 
     /// Sets migration parameters (e.g. max-bandwidth).
     pub async fn set_migration_parameters(&self, max_bandwidth: u64) -> Result<(), String> {
-        let mut stream = self.connect_and_negotiate().await?;
-        let cmd = format!(
-            "{{\"execute\": \"migrate-set-parameters\", \"arguments\": {{\"max-bandwidth\": {} }} }}\n",
-            max_bandwidth
-        );
-        stream
-            .write_all(cmd.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to set migration parameters: {}", e))?;
+        let stream = self.connect_and_negotiate().await?;
 
-        let resp = Self::read_line(&mut stream).await?;
-        if resp.contains("\"error\"") {
-            return Err(format!("Failed to set migration parameters: {}", resp));
-        }
-        Ok(())
+        let cmd = json!({
+            "execute": "migrate-set-parameters",
+            "arguments": { "max-bandwidth": max_bandwidth }
+        });
+        self.send_command_checked(stream, cmd, "migration parameters")
+            .await
     }
 }
 
@@ -377,11 +381,11 @@ impl Hypervisor for QemuHypervisor {
             .write(true)
             .truncate(true)
             .open(&self.log_path)
-            .map_err(|e| format!("Failed to open log file at '{}': {}", self.log_path, e))?;
+            .map_err(|e| format!("Failed to open log file at '{}': {e}", self.log_path))?;
 
         let log_stderr = log_file
             .try_clone()
-            .map_err(|e| format!("Failed to clone log file descriptor: {}", e))?;
+            .map_err(|e| format!("Failed to clone log file descriptor: {e}"))?;
 
         let mut cmd = tokio::process::Command::new(&self.bin_path);
         cmd.args(&args)
@@ -390,7 +394,7 @@ impl Hypervisor for QemuHypervisor {
 
         let child = cmd
             .spawn()
-            .map_err(|e| format!("Failed to spawn child process '{}': {}", self.bin_path, e))?;
+            .map_err(|e| format!("Failed to spawn child process '{}': {e}", self.bin_path))?;
 
         let pid = child
             .id()
@@ -398,7 +402,7 @@ impl Hypervisor for QemuHypervisor {
 
         tokio::fs::write(self.pid_path(), pid.to_string())
             .await
-            .map_err(|e| format!("Failed to write PID file: {}", e))?;
+            .map_err(|e| format!("Failed to write PID file: {e}"))?;
 
         Ok(())
     }
@@ -412,12 +416,12 @@ impl Hypervisor for QemuHypervisor {
 
         let pid_str = tokio::fs::read_to_string(&pid_path)
             .await
-            .map_err(|e| format!("Failed to read PID file: {}", e))?;
+            .map_err(|e| format!("Failed to read PID file: {e}"))?;
 
         let pid: u32 = pid_str
             .trim()
             .parse()
-            .map_err(|e| format!("Failed to parse PID '{}': {}", pid_str, e))?;
+            .map_err(|e| format!("Failed to parse PID '{}': {e}", pid_str))?;
 
         use nix::sys::signal::{kill, Signal};
         use nix::unistd::Pid;
@@ -449,7 +453,7 @@ impl Hypervisor for QemuHypervisor {
 
         let pid_str = tokio::fs::read_to_string(&pid_path)
             .await
-            .map_err(|e| format!("Failed to read PID file: {}", e))?;
+            .map_err(|e| format!("Failed to read PID file: {e}"))?;
 
         let pid_trim = pid_str.trim();
         if pid_trim.is_empty() {
@@ -458,7 +462,7 @@ impl Hypervisor for QemuHypervisor {
 
         let pid: u32 = pid_trim
             .parse()
-            .map_err(|e| format!("Failed to parse PID: {}", e))?;
+            .map_err(|e| format!("Failed to parse PID: {e}"))?;
 
         if !self.check_pid_alive(pid).await {
             self.cleanup_host_resources().await?;

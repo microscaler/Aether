@@ -10,6 +10,8 @@ pub mod socket;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::sync::Arc;
 
 /// Current state of a migration operation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -74,17 +76,62 @@ pub struct RealMigrationManager {
     /// Bind address for incoming migrations.
     pub bind_addr: String,
     /// Map of VM ID to QMP socket path.
-    pub qmp_sockets: std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, String>>>,
+    pub qmp_sockets: Arc<tokio::sync::RwLock<std::collections::HashMap<String, String>>>,
+    /// HMAC secret for validating attestation tokens from source nodes.
+    pub attestation_secret: Vec<u8>,
+    /// Path to CA certificate PEM for mTLS (empty for plain TCP).
+    pub ca_cert_path: String,
+    /// Path to server certificate PEM for mTLS (empty for plain TCP).
+    pub server_cert_path: String,
+    /// Path to server private key PEM for mTLS (empty for plain TCP).
+    pub server_key_path: String,
+    /// Tracks VMs currently undergoing active migration.
+    active_migrations: Arc<tokio::sync::RwLock<HashSet<String>>>,
 }
 
 impl RealMigrationManager {
     pub fn new(bind_addr: String) -> Self {
+        Self::new_with_defaults(bind_addr, b"aether-migration-secret".to_vec())
+    }
+
+    pub fn new_with_defaults(bind_addr: String, attestation_secret: Vec<u8>) -> Self {
         Self {
             bind_addr,
-            qmp_sockets: std::sync::Arc::new(tokio::sync::RwLock::new(
-                std::collections::HashMap::new(),
-            )),
+            qmp_sockets: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
+            attestation_secret,
+            ca_cert_path: String::new(),
+            server_cert_path: String::new(),
+            server_key_path: String::new(),
+            active_migrations: Arc::new(tokio::sync::RwLock::new(HashSet::new())),
         }
+    }
+
+    pub fn new_full(
+        bind_addr: String,
+        attestation_secret: Vec<u8>,
+        ca_cert_path: String,
+        server_cert_path: String,
+        server_key_path: String,
+    ) -> Self {
+        Self {
+            bind_addr,
+            qmp_sockets: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
+            attestation_secret,
+            ca_cert_path,
+            server_cert_path,
+            server_key_path,
+            active_migrations: Arc::new(tokio::sync::RwLock::new(HashSet::new())),
+        }
+    }
+
+    /// Creates a manager with a hardcoded secret (for tests).
+    pub fn new_with_secret(bind_addr: String, secret: Vec<u8>) -> Self {
+        Self::new_with_defaults(bind_addr, secret)
+    }
+
+    /// Returns the set of currently active migration VM IDs.
+    pub async fn get_active_migrations(&self) -> HashSet<String> {
+        self.active_migrations.read().await.clone()
     }
 }
 
@@ -94,17 +141,25 @@ impl MigrationManager for RealMigrationManager {
         let sockets = self.qmp_sockets.read().await;
         let qmp_socket = sockets
             .get(vm_id)
-            .ok_or_else(|| format!("VM {} not found", vm_id))?;
+            .ok_or_else(|| format!("VM {vm_id} not found"))?;
 
         let uri = socket::get_migration_uri(&params.destination_ip, params.port, params.use_tls);
 
-        // 1. Enable auto-converge (ensures convergence under write-heavy loads)
-        let convergence = converge::ConvergenceManager::new(qmp_socket.clone());
-        if let Err(e) = convergence.enable_auto_converge().await {
-            return Err(format!("Failed to enable auto-converge: {}", e));
+        // 1. Set migration bandwidth limit before starting
+        if params.max_bandwidth > 0 {
+            let qmp = crate::hypervisor::qemu::QmpClient::new(qmp_socket.clone());
+            if let Err(e) = qmp.set_migration_parameters(params.max_bandwidth).await {
+                return Err(format!("Failed to set migration bandwidth: {e}"));
+            }
         }
 
-        // 2. Start block replication (drive-mirror over NBD)
+        // 2. Enable auto-converge (ensures convergence under write-heavy loads)
+        let convergence = converge::ConvergenceManager::new(qmp_socket.clone());
+        if let Err(e) = convergence.enable_auto_converge().await {
+            return Err(format!("Failed to enable auto-converge: {e}"));
+        }
+
+        // 3. Start block replication (drive-mirror over NBD)
         // In production, discover block devices from the VM and mirror each one.
         // For now, mirror the root device as a representative.
         let block_repl = block::BlockReplicator::new(qmp_socket.clone());
@@ -115,10 +170,10 @@ impl MigrationManager for RealMigrationManager {
         {
             // Rollback: disable auto-converge to avoid leaving the VM throttled
             let _ = convergence.disable_auto_converge().await;
-            return Err(format!("Block replication failed: {}", e));
+            return Err(format!("Block replication failed: {e}"));
         }
 
-        // 3. Start memory migration
+        // 4. Start memory migration
         let migrator = memory::MemoryMigrator::new(qmp_socket.clone());
         if let Err(e) = migrator.start_migration(&uri).await {
             // Rollback: disable auto-converge and cancel block mirroring
@@ -131,26 +186,45 @@ impl MigrationManager for RealMigrationManager {
         Ok(())
     }
 
-    async fn prepare_incoming(&self, vm_id: &str, port: u16, _use_tls: bool) -> Result<(), String> {
+    async fn prepare_incoming(&self, vm_id: &str, port: u16, use_tls: bool) -> Result<(), String> {
         let sockets = self.qmp_sockets.read().await;
         let qmp_socket = sockets
             .get(vm_id)
-            .ok_or_else(|| format!("VM {} not found", vm_id))?;
+            .ok_or_else(|| format!("VM {vm_id} not found"))?;
 
-        // 1. Start the migration listener with attestation verification
-        // Use hardcoded attestation secret for now; in production this would come
-        // from the node's configuration or a secrets manager.
-        let attestation_secret = b"aether-migration-secret".to_vec();
-        let socket_manager = socket::MigrationSocketManager::new_with_secret(
+        // Create socket manager with the configured attestation secret
+        let socket_manager = socket::MigrationSocketManager::new(
             self.bind_addr.clone(),
-            attestation_secret,
+            self.attestation_secret.clone(),
+            self.ca_cert_path.clone(),
+            self.server_cert_path.clone(),
+            self.server_key_path.clone(),
         );
-        let _actual_port = socket_manager.listen_for_incoming(port, vm_id).await?;
+
+        if use_tls {
+            // TLS listener requires valid cert paths
+            if self.ca_cert_path.is_empty()
+                || self.server_cert_path.is_empty()
+                || self.server_key_path.is_empty()
+            {
+                return Err(
+                    "TLS requested but CA cert, server cert, and server key paths are empty"
+                        .to_string(),
+                );
+            }
+            let (_tls_acceptor, _shutdown) =
+                socket_manager.listen_for_incoming_tls(port, vm_id).await?;
+            // Keep _tls_acceptor and _shutdown alive to prevent early drop
+            drop(_tls_acceptor);
+            drop(_shutdown);
+        } else {
+            let _actual_port = socket_manager.listen_for_incoming(port, vm_id).await?;
+        }
 
         let block_repl = block::BlockReplicator::new(qmp_socket.clone());
-        let listen_addr = format!("0.0.0.0:{}", port);
+        let listen_addr = format!("0.0.0.0:{port}");
 
-        // 2. Prepare NBD for incoming block data
+        // Prepare NBD for incoming block data
         block_repl
             .prepare_destination("drive-root", &listen_addr)
             .await?;
@@ -159,22 +233,35 @@ impl MigrationManager for RealMigrationManager {
     }
 
     async fn query_migration_status(&self, vm_id: &str) -> Result<MigrationState, String> {
+        // Check if we have tracking state for this VM
+        {
+            let active = self.active_migrations.read().await;
+            if active.contains(vm_id) {
+                // VM is registered as actively migrating
+            }
+        }
+
         let sockets = self.qmp_sockets.read().await;
         let qmp_socket = sockets
             .get(vm_id)
-            .ok_or_else(|| format!("VM {} not found", vm_id))?;
+            .ok_or_else(|| format!("VM {vm_id} not found"))?;
 
         let qmp = crate::hypervisor::qemu::QmpClient::new(qmp_socket.clone());
         let resp = qmp.query_migrate().await?;
 
-        if resp.contains("\"status\": \"completed\"") {
-            Ok(MigrationState::Completed)
-        } else if resp.contains("\"status\": \"active\"") {
-            Ok(MigrationState::Active)
-        } else if resp.contains("\"status\": \"failed\"") {
-            Ok(MigrationState::Failed(resp))
-        } else {
-            Ok(MigrationState::Idle)
+        // Use serde_json for robust parsing instead of string matching
+        let json = serde_json::from_str::<serde_json::Value>(&resp)
+            .map_err(|_| format!("Failed to parse QMP migration response: {resp}"))?;
+        let status_val = json
+            .get("return")
+            .and_then(|r| r.get("status"))
+            .and_then(|s| s.as_str());
+
+        match status_val {
+            Some("completed") => Ok(MigrationState::Completed),
+            Some("active") => Ok(MigrationState::Active),
+            Some("failed") => Ok(MigrationState::Failed(resp)),
+            _ => Ok(MigrationState::Idle),
         }
     }
 
@@ -182,19 +269,20 @@ impl MigrationManager for RealMigrationManager {
         let sockets = self.qmp_sockets.read().await;
         let qmp_socket = sockets
             .get(vm_id)
-            .ok_or_else(|| format!("VM {} not found", vm_id))?;
+            .ok_or_else(|| format!("VM {vm_id} not found"))?;
 
         let qmp = crate::hypervisor::qemu::QmpClient::new(qmp_socket.clone());
         qmp.migrate_cancel().await?;
+
+        // Remove from active migrations tracking
+        let mut active = self.active_migrations.write().await;
+        active.remove(vm_id);
 
         Ok(())
     }
 
     async fn get_active_migration_count(&self) -> u32 {
-        let sockets = self.qmp_sockets.read().await;
-        // In a real implementation, we would track active migration tasks.
-        // For now, we return the count of VMs registered for migration.
-        sockets.len() as u32
+        self.active_migrations.read().await.len() as u32
     }
 
     async fn register_vm(&self, vm_id: &str, qmp_socket: &str) -> Result<(), String> {

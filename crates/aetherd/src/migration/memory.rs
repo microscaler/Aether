@@ -21,34 +21,36 @@ impl MemoryMigrator {
     pub async fn start_migration(&self, destination_uri: &str) -> Result<(), String> {
         let qmp = QmpClient::new(self.qmp_socket.clone());
 
-        // 1. Set migration parameters if needed (e.g. bandwidth)
-        // (Placeholder for set_migration_parameters)
-
-        // 2. Start migration
+        // Start migration
         qmp.migrate(destination_uri).await?;
 
         Ok(())
     }
 
-    /// Polls for migration completion.
+    /// Polls for migration completion using structured JSON parsing.
     pub async fn wait_for_completion(&self) -> Result<(), String> {
         let qmp = QmpClient::new(self.qmp_socket.clone());
 
         loop {
             let status = qmp.query_migrate().await?;
-            if status.contains("\"status\": \"completed\"")
-                || status.contains("\"status\":\"completed\"")
-            {
-                return Ok(());
-            }
-            if status.contains("\"status\": \"failed\"") || status.contains("\"status\":\"failed\"")
-            {
-                return Err(format!("Migration failed in QEMU: {}", status));
-            }
-            if status.contains("\"status\": \"cancelled\"")
-                || status.contains("\"status\":\"cancelled\"")
-            {
-                return Err("Migration was cancelled".to_string());
+
+            // Use serde_json for robust parsing instead of fragile string matching
+            let json = serde_json::from_str::<serde_json::Value>(&status)
+                .map_err(|_| format!("Failed to parse migration status: {status}"))?;
+            let status_val = json
+                .get("return")
+                .and_then(|r| r.get("status"))
+                .and_then(|s| s.as_str());
+
+            match status_val {
+                Some("completed") => return Ok(()),
+                Some("failed") => return Err(format!("Migration failed in QEMU: {status}")),
+                Some("cancelled") => return Err("Migration was cancelled".to_string()),
+                Some("postcopy-failed") => {
+                    return Err(format!("Migration failed in post-copy phase: {status}"))
+                }
+                // "setup", "cancelled", "error", "recover", or unknown → keep polling
+                _ => {}
             }
 
             tokio::time::sleep(Duration::from_millis(500)).await;

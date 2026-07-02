@@ -1,6 +1,6 @@
 # Coverage Report (excl. main.rs)
 
-**3212** / **3690** lines covered — **87.05%**
+**3223** / **3696** lines covered — **87.2%**
 
 **Threshold:** 80% | **Status:** ✅ PASS
 
@@ -8,7 +8,7 @@
 | --- | --- | --- | --- | --- |
 | `aether-aggregator` | 11 | 1390 | 1535 | 90.6% |
 | `aether-auth` | 3 | 175 | 189 | 92.6% |
-| `aetherd` | 25 | 1647 | 1966 | 83.8% |
+| `aetherd` | 25 | 1658 | 1972 | 84.1% |
 
 ## `aether-aggregator`
 
@@ -207,50 +207,48 @@
 
 ### crates/aetherd/src/migration/memory.rs
 
-- Coverage: 🔴 **29.4%** (5/17 lines)
+- Coverage: 🔴 **25.0%** (5/20 lines)
 - **Missed lines:**
-  - Lines 34-35
+  - Lines 31-32
+  - Line 35
   - Lines 38-40
-  - Line 42
-  - Line 44
-  - Line 46
-  - Lines 48-49
-  - Line 51
-  - Line 54
+  - Lines 42-43
+  - Lines 45-50
+  - Line 56
 
 ### crates/aetherd/src/migration/socket.rs
 
-- Coverage: 🔴 **50.0%** (63/126 lines)
+- Coverage: 🔴 **49.6%** (64/129 lines)
 - **Missed lines:**
   - Lines 65-69
   - Line 72
-  - Lines 74-75
-  - Line 77
+  - Line 75
+  - Lines 77-80
   - Line 82
-  - Line 92
-  - Lines 95-100
-  - Lines 103-105
-  - Lines 107-108
-  - Line 167
-  - Lines 173-175
-  - Line 177
-  - Lines 180-181
-  - Lines 186-189
-  - Line 191
-  - Lines 194-197
-  - Line 199
-  - Line 202
-  - Line 205
-  - Lines 207-208
-  - Lines 212-218
-  - Lines 221-223
-  - Line 296
-  - Lines 303-304
-  - Line 357
-  - Line 416
-  - Line 418
-  - Lines 424-426
-  - Line 428
+  - Line 87
+  - Line 97
+  - Lines 100-105
+  - Lines 108-110
+  - Lines 112-113
+  - Line 172
+  - Lines 178-180
+  - Line 182
+  - Lines 185-186
+  - Lines 191-194
+  - Line 196
+  - Lines 199-202
+  - Line 204
+  - Line 207
+  - Line 210
+  - Lines 212-213
+  - Lines 217-223
+  - Lines 226-228
+  - Line 301
+  - Lines 308-309
+  - Line 421
+  - Line 423
+  - Lines 429-431
+  - Line 433
 
 ### crates/aetherd/src/migration/converge.rs
 
@@ -289,42 +287,6 @@
   - Line 372
   - Line 374
 
-### crates/aetherd/src/hypervisor/qemu.rs
-
-- Coverage: 🟡 **71.2%** (171/240 lines)
-- **Missed lines:**
-  - Line 122
-  - Line 141
-  - Lines 144-145
-  - Line 149
-  - Line 167
-  - Line 203
-  - Line 242
-  - Line 261
-  - Lines 267-269
-  - Lines 273-276
-  - Lines 278-280
-  - Line 282
-  - Lines 286-292
-  - Lines 294-295
-  - Line 309
-  - Lines 315-317
-  - Lines 321-324
-  - Lines 326-328
-  - Line 330
-  - Lines 340-346
-  - Lines 348-349
-  - Lines 354-355
-  - Lines 360-362
-  - Lines 366-367
-  - Line 370
-  - Lines 409-410
-  - Lines 431-433
-  - Line 456
-  - Lines 464-465
-  - Line 471
-  - Lines 475-476
-
 ### crates/aetherd/src/telemetry.rs
 
 - Coverage: 🟡 **76.2%** (64/84 lines)
@@ -345,6 +307,52 @@
   - Line 25
   - Line 42
   - Lines 49-53
+
+### crates/aetherd/src/hypervisor/qemu.rs
+
+- Coverage: 🟡 **77.6%** (159/205 lines)
+- **Missed lines:**
+  - Line 127
+  - Line 188
+  - Line 192
+  - Line 242
+  - Lines 244-245
+  - Lines 247-248
+  - Line 252
+  - Lines 297-298
+  - Line 300
+  - Lines 304-305
+  - Lines 309-310
+  - Lines 312-313
+  - Lines 344-350
+  - Lines 352-353
+  - Lines 358-359
+  - Lines 364-366
+  - Lines 370-371
+  - Line 374
+  - Lines 413-414
+  - Lines 435-437
+  - Line 460
+  - Lines 468-469
+  - Line 475
+  - Lines 479-480
+
+### crates/aetherd/src/migration/mod.rs
+
+- Coverage: 🟡 **81.3%** (87/107 lines)
+- **Missed lines:**
+  - Line 109
+  - Line 118
+  - Line 123
+  - Lines 128-129
+  - Lines 133-134
+  - Line 152
+  - Line 159
+  - Lines 172-173
+  - Lines 180-183
+  - Lines 207-208
+  - Line 215
+  - Lines 218-219
 
 ### crates/aetherd/src/storage/zfs.rs
 
@@ -378,14 +386,6 @@
   - Line 49
   - Line 62
   - Line 92
-
-### crates/aetherd/src/migration/mod.rs
-
-- Coverage: 🟢 **90.4%** (66/73 lines)
-- **Missed lines:**
-  - Line 104
-  - Lines 117-118
-  - Lines 125-128
 
 ### crates/aetherd/src/cloud_init.rs
 
@@ -436,15 +436,15 @@
 
 ### crates/aetherd/tests/migration_tests.rs
 
-- Coverage: 🟢 **97.4%** (332/341 lines)
+- Coverage: 🟢 **97.4%** (333/342 lines)
 - **Missed lines:**
   - Lines 28-29
-  - Line 160
-  - Line 200
-  - Line 225
-  - Line 250
-  - Lines 413-414
-  - Line 496
+  - Line 162
+  - Line 202
+  - Line 227
+  - Line 252
+  - Lines 417-418
+  - Line 500
 
 ### crates/aetherd/tests/vsock_stream_performance.rs
 

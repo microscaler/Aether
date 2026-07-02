@@ -69,8 +69,13 @@ fn build_mtls_config(
             .map_err(|e| format!("Failed to add CA certificate: {e}"))?;
     }
 
+    let client_cert_verifier =
+        tokio_rustls::rustls::server::WebPkiClientVerifier::builder(Arc::new(root_store))
+            .build()
+            .map_err(|e| format!("Failed to build client cert verifier: {e}"))?;
+
     let config = ServerConfig::builder()
-        .with_no_client_auth()
+        .with_client_cert_verifier(client_cert_verifier)
         .with_single_cert(certs, key)
         .map_err(|e| format!("Failed to build TLS config: {e}"))?;
 
@@ -466,11 +471,12 @@ mod tests {
             "127.0.0.1".to_string(),
             b"test-secret".to_vec(),
         );
+        // Bind to a specific non-zero port (49999 — unlikely to be in use)
         let port = manager
-            .listen_for_incoming(0, "test-source-node")
+            .listen_for_incoming(49999, "test-source-node")
             .await
             .expect("listen for incoming should succeed");
-        assert!(port > 0);
+        assert_eq!(port, 49999);
         manager.shutdown().await;
     }
 
