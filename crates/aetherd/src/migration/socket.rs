@@ -538,9 +538,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_socket_manager_bind_addr() {
-        let manager =
-            MigrationSocketManager::new_with_secret("0.0.0.0".to_string(), b"test-secret".to_vec());
-        assert_eq!(manager.bind_addr(), "0.0.0.0");
+        let manager = MigrationSocketManager::new_with_secret(
+            "127.0.0.1".to_string(),
+            b"test-secret".to_vec(),
+        );
+        assert_eq!(manager.bind_addr(), "127.0.0.1");
     }
 
     #[tokio::test]
