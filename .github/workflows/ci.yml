@@ -31,10 +31,10 @@ jobs:
       - name: Run mypy type checks
         run: mypy .
 
-      - name: Install Protoc
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+          sudo apt-get install -y protobuf-compiler libzfslinux-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
