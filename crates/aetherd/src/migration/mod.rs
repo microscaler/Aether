@@ -222,7 +222,7 @@ impl MigrationManager for RealMigrationManager {
         }
 
         let block_repl = block::BlockReplicator::new(qmp_socket.clone());
-        let listen_addr = format!("0.0.0.0:{port}");
+        let listen_addr = format!("127.0.0.1:{port}");
 
         // Prepare NBD for incoming block data
         block_repl

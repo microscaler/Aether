@@ -444,6 +444,6 @@ There is NO test that exercises the full flow: register node -> bid request -> r
 10. **Epic-01 clippy cognitive complexity config mismatch** - Align `clippy.toml` with Cargo.toml lints ✅ DONE
 11. **Token manager uses blocking Mutex** - Replace with `parking_lot::Mutex` or `DashMap` ✅ DONE (`parking_lot::Mutex` adopted; lock-poisoning error path removed)
 12. **Cloud-init ISO does not use tmpfs** - Explicitly create tempdir on tmpfs mount
-13. **Migration socket binds 0.0.0.0** - Change to 127.0.0.1 for blade-internal traffic
+13. **Migration socket binds 0.0.0.0** - Change to 127.0.0.1 for blade-internal traffic ✅ DONE
 14. **Proto ControlRequest has no handler** - Either implement or remove from proto
 15. **Add end-to-end integration test** - Wire register -> bid -> execute -> teardown
