@@ -242,11 +242,11 @@ The integration test `auction_convergence_timing.rs` exists but tests a differen
 | Requirement | Status | Notes |
 |---|---|---|
 | FR: iSCSI session management | PARTIAL | `IscsiManager` trait + `RealIscsiManager` |
-| Implementation quality | ISSUE | `login_target()` returns hardcoded `"/dev/iscsi-target-placeholder"` |
+| Implementation quality | PASS | `login_target()` already resolves real `/dev/sd*` paths via `/sys/class/iscsi_session`; discovery parsing is token-based (not fixed-column) |
 
-**CRITICAL GAP:** The `RealIscsiManager::login_target()` method returns a hardcoded placeholder string `/dev/iscsi-target-placeholder` instead of parsing actual block device paths. This is non-functional stub code that would silently produce incorrect results in production.
+**GAP (RESOLVED):** `RealIscsiManager::login_target()` now polls `/sys/class/iscsi_session` and returns the real `/dev/<device>` mapping for the IQN instead of a placeholder path. ✅
 
-**EDGE CASE:** `discover_targets` parses `iscsiadm` output using `split_whitespace().nth(1)` which assumes a specific output format. Different `iscsiadm` versions may have different output formats.
+**EDGE CASE (RESOLVED):** `discover_targets` now extracts the first token matching iSCSI target-name formats (`iqn.`, `eui.`, `naa.`), avoiding fixed-column assumptions across `iscsiadm` output variants. ✅
 
 ### Story 04.2 - Dynamic Linux Bridge and VLAN Tag Interface Setup
 
@@ -428,7 +428,7 @@ There is NO test that exercises the full flow: register node -> bid request -> r
 ## PRIORITIZED REMEDIATION PLAN
 
 ### P0 (Production Risk)
-1. **iSCSI `login_target` returns hardcoded placeholder** - Fix to actually parse `/sys/class/iscsi_session` or `lsblk` output
+1. **iSCSI `login_target` returns hardcoded placeholder** - Fix to parse `/sys/class/iscsi_session` output ✅ DONE
 2. **EPIC-04 has zero unit tests** - All 2200 lines need at minimum unit tests for CLI wrapper functions
 3. **VSOCK has zero tests** (277 lines) - Add basic connection validation tests
 4. **Memory migration has no rollback** - Add `abort()` method and test failure recovery

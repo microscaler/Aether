@@ -10,6 +10,16 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+fn is_iscsi_target_name(token: &str) -> bool {
+    token.starts_with("iqn.") || token.starts_with("eui.") || token.starts_with("naa.")
+}
+
+fn parse_discovery_iqn(line: &str) -> Option<String> {
+    line.split_whitespace()
+        .find(|token| is_iscsi_target_name(token))
+        .map(ToString::to_string)
+}
+
 /// Trait to manage iSCSI sessions on Compute nodes (initiators).
 ///
 /// TODO: Refactor to use `libopeniscsiusr` FFI bindings instead of `iscsiadm` CLI
@@ -137,10 +147,7 @@ impl IscsiManager for RealIscsiManager {
         }
 
         let out_str = String::from_utf8_lossy(&output.stdout);
-        let targets = out_str
-            .lines()
-            .filter_map(|l| l.split_whitespace().nth(1).map(|s| s.to_string()))
-            .collect();
+        let targets = out_str.lines().filter_map(parse_discovery_iqn).collect();
 
         Ok(targets)
     }
@@ -357,6 +364,27 @@ mod tests {
             .await
             .expect("discover_targets failed");
         assert!(targets.is_empty());
+    }
+
+    #[test]
+    fn test_parse_discovery_iqn_standard_output() {
+        let line = "10.0.0.1:3260,1 iqn.2024-01.com.example:vol1";
+        let parsed = parse_discovery_iqn(line);
+        assert_eq!(parsed.as_deref(), Some("iqn.2024-01.com.example:vol1"));
+    }
+
+    #[test]
+    fn test_parse_discovery_iqn_with_additional_columns() {
+        let line = "[fe80::1]:3260,1 0 iqn.2024-01.com.example:vol2 non-flash";
+        let parsed = parse_discovery_iqn(line);
+        assert_eq!(parsed.as_deref(), Some("iqn.2024-01.com.example:vol2"));
+    }
+
+    #[test]
+    fn test_parse_discovery_iqn_non_target_line() {
+        let line = "iscsiadm: no targets discovered";
+        let parsed = parse_discovery_iqn(line);
+        assert!(parsed.is_none());
     }
 
     #[tokio::test]
