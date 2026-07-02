@@ -263,11 +263,12 @@ impl Default for MockIscsiManager {
 /// The mapping is injective for all `u32` values so device names are
 /// always unique regardless of logout/login cycling.
 fn counter_to_sdname(n: u32) -> String {
+    const ALPHABET: &[u8; 26] = b"abcdefghijklmnopqrstuvwxyz";
     // Shift by 1 so index 0 produces 'b' instead of 'a'.
-    let mut val = n as usize + 1;
-    let mut chars: Vec<u8> = Vec::new();
+    let mut val = usize::from(n) + 1;
+    let mut chars: Vec<char> = Vec::new();
     loop {
-        chars.push(b'a' + (val % 26) as u8);
+        chars.push(char::from(ALPHABET[val % 26]));
         val /= 26;
         if val == 0 {
             break;
@@ -275,7 +276,7 @@ fn counter_to_sdname(n: u32) -> String {
         val -= 1; // adjust for the 1-indexed shift
     }
     chars.reverse();
-    chars.iter().map(|&b| b as char).collect()
+    chars.into_iter().collect()
 }
 
 #[async_trait]
