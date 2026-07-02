@@ -76,7 +76,7 @@ This audit systematically cross-referenced 26 story documents (16 functional req
 | NFR-1.4.1: <1ms validation | NO TEST | No performance tests |
 | NFR-1.4.2: HMAC key rotation in memory | PARTIAL | Secret is stored as `Vec<u8>` in struct but no rotation API exists |
 
-**GAP:** FR-1.4.2 requires a "sliding history window of used tokens" but the implementation uses a `Mutex<HashMap<String, u64>>` protected by a blocking `Mutex`. In a high-throughput gRPC server this is a contention bottleneck. No `parking_lot::Mutex` or `dashmap` usage.
+**GAP (RESOLVED):** FR-1.4.2 previously used `std::sync::Mutex<HashMap<String, u64>>` (a blocking mutex). Replaced with `parking_lot::Mutex`; lock-poisoning error handling removed. ✅
 
 **EDGE CASE:** Token generation uses `SystemTime::subsec_nanos()` as a nonce. Two tokens generated within the same nanosecond on the same thread would have identical nonces - theoretically a collision risk if an attacker can time their requests precisely. Not a practical concern but technically a gap.
 
@@ -441,8 +441,8 @@ There is NO test that exercises the full flow: register node -> bid request -> r
 9. **Block replication has no progress monitoring** - Add polling and abort support
 
 ### P2 (Enhancement)
-10. **Epic-01 clippy cognitive complexity config mismatch** - Align `clippy.toml` with Cargo.toml lints
-11. **Token manager uses blocking Mutex** - Replace with `parking_lot::Mutex` or `DashMap`
+10. **Epic-01 clippy cognitive complexity config mismatch** - Align `clippy.toml` with Cargo.toml lints ✅ DONE
+11. **Token manager uses blocking Mutex** - Replace with `parking_lot::Mutex` or `DashMap` ✅ DONE (`parking_lot::Mutex` adopted; lock-poisoning error path removed)
 12. **Cloud-init ISO does not use tmpfs** - Explicitly create tempdir on tmpfs mount
 13. **Migration socket binds 0.0.0.0** - Change to 127.0.0.1 for blade-internal traffic
 14. **Proto ControlRequest has no handler** - Either implement or remove from proto

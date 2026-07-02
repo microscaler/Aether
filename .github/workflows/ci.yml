@@ -31,10 +31,21 @@ jobs:
       - name: Run mypy type checks
         run: mypy .
 
-      - name: Install Protoc
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+          sudo apt-get install -y protobuf-compiler libzfslinux-dev genisoimage
+
+      - name: Install Firecracker and Jailer
+        run: |
+          FC_VERSION="v1.10.1"
+          ARCH=$(uname -m)
+          curl -sfL "https://github.com/firecracker-microvm/firecracker/releases/download/${FC_VERSION}/firecracker-${FC_VERSION}-${ARCH}.tgz" \
+            | tar -xz --strip-components=1 -C /tmp \
+              "release-${FC_VERSION}-${ARCH}/firecracker-${FC_VERSION}-${ARCH}" \
+              "release-${FC_VERSION}-${ARCH}/jailer-${FC_VERSION}-${ARCH}"
+          sudo install -m 0755 "/tmp/firecracker-${FC_VERSION}-${ARCH}" /usr/local/bin/firecracker
+          sudo install -m 0755 "/tmp/jailer-${FC_VERSION}-${ARCH}" /usr/local/bin/jailer
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

@@ -1,7 +1,7 @@
 use hmac::{Hmac, KeyInit, Mac};
+use parking_lot::Mutex;
 use sha2::Sha256;
 use std::collections::HashMap;
-use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 type HmacSha256 = Hmac<Sha256>;
@@ -82,7 +82,7 @@ impl TokenManager {
         }
 
         // Lock map to check for replays and perform garbage collection
-        let mut seen = self.seen_signatures.lock().map_err(|e| e.to_string())?;
+        let mut seen = self.seen_signatures.lock();
         if seen.contains_key(signature) {
             return Err("Replayed token detected".to_string());
         }
