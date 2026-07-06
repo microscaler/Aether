@@ -518,27 +518,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "c2rust-bitfields"
-version = "0.22.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e91b9a85391b09c224053f3c45344f0639822e641f9d2b4f351bb3152600742d"
-dependencies = [
- "c2rust-bitfields-derive",
-]
-
-[[package]]
-name = "c2rust-bitfields-derive"
-version = "0.22.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "153187c06ed005d5cb75ed9f0a2f274836f54f6b2efdc1f45136e728764875f9"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.106",
- "unicode-ident",
-]
-
-[[package]]
 name = "cc"
 version = "1.2.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4461,13 +4440,12 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tun-rs"
-version = "2.8.5"
+version = "2.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63271eef24ceec4e06b121a757ace951681196950825e6f29d955a151363eb6b"
+checksum = "675d4d5a2a7fe12c743132eb35d45e90a5f9bf798762d2de6cea91d1d9d8feb4"
 dependencies = [
  "byteorder",
  "bytes",
- "c2rust-bitfields",
  "encoding_rs",
  "getifaddrs",
  "ipnet",
