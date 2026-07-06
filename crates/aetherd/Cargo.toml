@@ -26,7 +26,7 @@ nix = { version = "0.29", features = ["fs", "process", "signal"] }
 zfs-core = "0.5.0"
 nvpair = "0.5.0"
 nvpair-sys = "0.4.0"
-rtnetlink = "0.14"
+rtnetlink = "0.21"
 tun-rs = "2.8.5"
 rustables = "0.8.8"
 
