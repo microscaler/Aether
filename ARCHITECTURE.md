@@ -1,26 +1,54 @@
-# Project Aether: Detailed System Architecture
+# Project Aether: System Architecture
 
-This document describes the concrete system architecture and design patterns for Project Aether's first iteration. The implementation focuses on standardizing on a **Pure Linux substrate**, utilizing **Firecracker microVMs** for the Compute Pool and **QEMU-KVM** for the Storage/Infrastructure Pool.
+This document is the technical hub for Aether's architecture. It gives the
+system-level model — components, control/data flow, concurrency, security posture,
+and hardware abstraction — and links out to per-subsystem **implementation
+references** that go down to real signatures, constants, and `file:line` citations.
+
+Aether standardizes on a **Pure Linux substrate**: **Firecracker microVMs** for the
+Compute Pool and **QEMU-KVM** for the Storage/Infrastructure Pool, coordinated by a
+stateless, decentralized control plane written in Rust.
+
+> **How to read this doc.** Sections 1–7 describe the intended architecture and are
+> stable. Where the current build differs from the design, you'll see an
+> **Implementation reality** note and a pointer to the relevant deep-dive. The
+> [Maturity Matrix](#8-implementation-maturity-matrix) summarizes what is
+> implemented and tested versus stubbed or planned as of the latest audit.
+
+## Deep-dive index
+
+| Subsystem | Reference |
+| :--- | :--- |
+| Reverse-bidding, scoring, tie-breaker, registry/heartbeat | [impl_bidding_scheduling.md](./docs/architecture/impl_bidding_scheduling.md) |
+| Hypervisor drivers, QMP, Cloud-Init, VM lifecycle | [impl_hypervisor_lifecycle.md](./docs/architecture/impl_hypervisor_lifecycle.md) |
+| ZFS/ZVOL, iSCSI, CSI, live migration | [impl_storage_migration.md](./docs/architecture/impl_storage_migration.md) |
+| mTLS, attestation, full gRPC protocol, networking, concurrency | [impl_security_protocol.md](./docs/architecture/impl_security_protocol.md) |
+
+Design/spec companions (intended state, not code-derived): [live_migration.md](./docs/architecture/live_migration.md),
+[capi_compatibility.md](./docs/architecture/capi_compatibility.md),
+[production_readiness.md](./docs/architecture/production_readiness.md),
+[flintlock_contracts.md](./docs/architecture/flintlock_contracts.md).
 
 ---
 
 ## 1. System Component Overview
 
-Aether is composed of four principal compiled Rust modules, designed to maintain a near-zero memory footprint and avoid heavy database dependencies.
+Aether is a Cargo workspace of five crates designed for a near-zero memory
+footprint and no heavy database dependencies.
 
 ```mermaid
 graph TD
     GitOps[GitOps Repo] -->|FluxCD Sync| K8s_API[Kubernetes Control Plane<br/>K8s API Server]
     CAPI[CAPI Controller] -->|Manages CRDs| K8s_API
     K8s_API -->|Triggers Reconcile| Agg[Aether Aggregator Operator]
-    
+
     Agg -->|OOB Redfish / REST| iLO_Alpha[HPE iLO 5: Slots 1-8]
     Agg -->|Control gRPC / mTLS| Blades[HPE c7000 Blade Enclosure]
     Agg -->|OOB Redfish / REST| iLO_Beta[HPE iLO 5: Slots 9-16]
-    
+
     iLO_Alpha -->|Hard Reset| Pool_Alpha
     iLO_Beta -->|Hard Reset| Pool_Beta
-    
+
     subgraph Blades [HPE c7000 Blade Enclosure]
         direction LR
         subgraph Pool_Alpha [Compute Pool: Slots 1-8]
@@ -29,7 +57,7 @@ graph TD
             C_HV[Firecracker Hypervisor]
             C_OS --- C_Daemon --- C_HV
         end
-        
+
         subgraph Pool_Beta [Infrastructure Pool: Slots 9-16]
             I_OS[Minimal Linux]
             I_Daemon[aetherd Node Daemon]
@@ -41,90 +69,113 @@ graph TD
     classDef k8s fill:#1f2937,stroke:#3b82f6,stroke-width:2px,color:#fff;
     classDef hardware fill:#1f2937,stroke:#eab308,stroke-width:2px,color:#fff;
     classDef pool fill:#1f2937,stroke:#10b981,stroke-width:2px,color:#fff;
-    
+
     class GitOps,CAPI,K8s_API,Agg k8s;
     class iLO_Alpha,iLO_Beta,Blades hardware;
     class Pool_Alpha,Pool_Beta pool;
 ```
 
+### Crate map
+
+| Crate | Role | Key modules |
+| :--- | :--- | :--- |
+| `aether-aggregator` | Stateless K8s operator & auction coordinator | `scheduler`, `registry`, `tie_breaker`, `storage/csi`, `network/hpe_vc` |
+| `aetherd` | Per-blade node daemon | `bidder`, `telemetry`, `hypervisor/{firecracker,qemu}`, `storage/{zfs,iscsi}`, `migration/*`, `network/bridge`, `cloud_init`, `vsock` |
+| `aether-auth` | Shared mTLS + attestation, generated proto bindings | `mtls`, `token`, `lib` (`include_proto!`) |
+| `aether-fence` | OOB STONITH via Redfish | *(planned — near-empty stub today)* |
+| `pact-mock-server` | Hardware mock (HPE OneView) for contract tests | `hpe_oneview`, `bin/oneview` |
+
 ### A. Aether Aggregator (`aether-aggregator`)
-The central coordinator of the cluster, running as a stateless Rust-based Kubernetes Operator. 
-*   **GitOps Reconciliation:** Watches Kubernetes Custom Resource Definitions (CRDs) like `AetherTenant` and `AetherVirtualDeployment` applied via FluxCD.
-*   **Stateless State Machine:** Retains a thread-safe in-memory state table (`NodeRegistry` and `WorkloadPlacement`) protected by `tokio::sync::RwLock`.
-*   **Auction Coordinator:** dispatches reverse-bid requests to blade daemons, collects scores, executes deterministic tie-breakers, and issues provisioning directives.
-*   **HA Monitor:** Continuously pings worker nodes. If a node fails heartbeats, it invokes `aether-fence` before re-initiating auctions for orphaned virtual machines.
+Stateless Rust Kubernetes Operator and central coordinator.
+*   **GitOps reconciliation:** watches CRDs (`AetherTenant`, `AetherVirtualDeployment`) applied by FluxCD.
+*   **Soft state:** in-memory `NodeRegistry` + placement tables under `tokio::sync::RwLock`.
+*   **Auction coordinator:** broadcasts reverse-bid requests, collects scores, runs the deterministic tie-breaker, issues provisioning directives. → [bidding deep-dive](./docs/architecture/impl_bidding_scheduling.md).
+*   **HA monitor:** prunes nodes that miss heartbeats and (by design) invokes `aether-fence` before re-auctioning orphaned VMs.
 
 ### B. Aether Node Daemon (`aetherd`)
-The local agent compiled as a single zero-dependency Rust binary, running as a systemd service on every bare-metal blade node.
-*   **Telemetry Monitor:** Queries CPU congestion (`/proc/loadavg`), memory usage (`/proc/meminfo`), memory channel bandwidth telemetry, and local NVMe storage health via S.M.A.R.T. APIs.
-*   **Auction Respondent:** Listens for gRPC bid requests, calculates the node's local efficiency score, and submits bids back to the Aggregator.
-*   **Hypervisor Provisioner:** Clones local backing volumes, compiles a custom `NoCloud` Cloud-Init ISO on the fly, configures virtual networking bridges, and spawns the VM:
-    *   **On Compute Nodes:** Spawns minimalist Firecracker microVM processes.
-    *   **On Storage/Infra Nodes:** Spawns full QEMU-KVM VM processes.
+Single zero-dependency binary, one per blade, run as a systemd service.
+*   **Telemetry:** `/proc/loadavg`, `/proc/meminfo`, `statvfs`, NVMe S.M.A.R.T.
+*   **Auction respondent:** scores local telemetry and returns a bid.
+*   **Provisioner:** builds a NoCloud Cloud-Init ISO, configures networking, and spawns Firecracker (compute) or QEMU-KVM (infra). → [hypervisor deep-dive](./docs/architecture/impl_hypervisor_lifecycle.md).
 
-### C. Aether Authentication & Attestation (`aether-auth`)
-A shared security library compiled into both the Aggregator and `aetherd`.
-*   **mTLS Layer:** Enforces Mutual TLS (mTLS) with RSA-4096 certificates on all gRPC loops, ensuring that only trusted physical blades can communicate.
-*   **Handshake Tokens:** Generates and validates cryptographically signed, single-use ephemeral tokens to attest node identity before workload deployments.
+> **Implementation reality.** Backend selection is currently a per-request
+> threshold (`cpu_limit < 4` ⇒ Firecracker) rather than a blade-role/CRD-profile
+> field. See the hypervisor deep-dive §1.
 
-### D. Aether Fencing Controller (`aether-fence`)
-The Out-of-Band (OOB) hardware power execution plane.
-*   **Fencing Enforcement:** Invoked by the Aggregator's recovery loop to execute hard power fencing (STONITH - Shoot The Other Node In The Head) via the HPE iLO 5 Redfish REST API.
-*   **Deterministic Safety:** Guarantees a rogue or partitioned node is completely shut down before its database volumes are cloned or its virtual machines are re-auctioned, avoiding file system corruption.
+### C. Auth & Attestation (`aether-auth`)
+Shared security library linked into both daemons.
+*   **mTLS** on all gRPC via tonic (rustls). *Implementation reality:* dev certs are **ECDSA P-256**, generated in-memory at startup; there is no production cert-file path yet.
+*   **Attestation:** single-use **HMAC-SHA256** tokens with a 60 s window and replay protection. → [security deep-dive](./docs/architecture/impl_security_protocol.md).
+
+### D. Fencing Controller (`aether-fence`)
+Out-of-band power-execution plane for STONITH via the HPE iLO 5 Redfish API.
+Guarantees a partitioned node is powered off before its volumes are cloned or its
+VMs re-auctioned. *Implementation reality:* this crate is a near-empty stub today
+(Stage 6). The `ChassisManager` trait shape is specified in §4.
 
 ### E. Pact Mock Server (`pact-mock-server`)
-A vendor-modularized standalone mock server simulating physical chassis backplanes and REST APIs (like HPE OneView).
-*   **Vendor Isolation:** Modular architecture isolating vendor-specific endpoints and behaviors in independent submodules (e.g. `crates/pact-mock-server/src/hpe_oneview.rs`).
-*   **Contract Testing:** Serves as the target mock provider for the Aggregator's midplane network driver client (`VirtualConnectClient`). Validates connection state tracking, token refreshes, and asynchronous task state polling under safe, local environments.
+Vendor-modularized mock of chassis REST APIs (HPE OneView), used for contract
+testing the aggregator's midplane driver. See [security deep-dive §5](./docs/architecture/impl_security_protocol.md#5-hardware-mock-pact-mock-server).
 
 ---
 
 ## 2. Dynamic Control & Data Flow
 
-### The Reverse-Bidding & Provisioning Sequence
+Coordination is a **star topology**: each `aetherd` holds a single mTLS gRPC
+channel to the aggregator. There is **no Raft, gossip, or quorum** between blades —
+placement is decided centrally from locally-computed bids, and the authoritative
+desired state lives in Kubernetes CRDs (GitOps), not in a replicated log across the
+blades. The only blade-to-blade traffic in the system is live migration.
+
 ```mermaid
 sequenceDiagram
     autonumber
     participant Agg as Central Aggregator
     participant B1 as aetherd (Blade 1)
     participant B2 as aetherd (Blade 2)
-    
-    Agg->>B1: Broadcast: RequestBid()
-    Agg->>B2: Broadcast: RequestBid()
-    
-    Note over B1: Telemetry Check:<br/>CPU Load: 0.15<br/>Score: 920
-    Note over B2: Telemetry Check:<br/>CPU Load: 0.85<br/>Score: 310
-    
-    B1->>Agg: BidResponse(Score: 920)
-    B2->>Agg: BidResponse(Score: 310)
-    
-    Note over Agg: 250ms Auction Closes<br/>Winner Selected: Blade 1
-    
-    Agg->>B1: Dispatch: Execute(Spec)
-    
-    Note over B1: Clone ZVOL Snapshot<br/>Generate Cloud-Init ISO<br/>Spawn Firecracker Process
-    
-    B1->>Agg: ProvisioningSuccess
+
+    Agg->>B1: Broadcast: RequestReverseBid()
+    Agg->>B2: Broadcast: RequestReverseBid()
+
+    Note over B1: Telemetry Check<br/>load 0.15 → Score 920
+    Note over B2: Telemetry Check<br/>load 0.85 → Score 310
+
+    B1->>Agg: BidResponse(920)
+    B2->>Agg: BidResponse(310)
+
+    Note over Agg: 250ms window closes<br/>Winner: Blade 1
+
+    Agg->>B1: Dispatch: ExecuteVM(Spec)
+
+    Note over B1: Cloud-Init ISO → Spawn Firecracker
+    B1->>Agg: ExecuteVMResponse(success)
 ```
+
+The auction converges in a hard **250 ms** window (a node that misses it is simply
+excluded — no retry). Winner selection filters `score > 0`, takes the maximum, and
+breaks ties deterministically. Full scoring formula, tie-breaker tiers, and the
+registry/heartbeat state machine are in the
+[bidding deep-dive](./docs/architecture/impl_bidding_scheduling.md).
 
 ---
 
 ## 3. Storage & Network Integration
 
-### Storage Substrate (ZFS on Linux & CSI Integration)
-To deliver high-performance persistent storage:
-*   Storage nodes (Slots 9-16) run **ZFS on Linux (ZoL)**.
-*   Templates are stored as base read-only ZFS snapshots.
-*   VM disks are created instantaneously as thin-provisioned **ZVOLs** cloned from base templates.
-*   **Kubernetes CSI Integration (Production - Network-Attached iSCSI):** Kubernetes running inside guest compute microVMs provisions storage via **`democratic-csi`** configured with the `zfs-generic-iscsi` driver. To maintain strict decoupling and reliability, volume claims are *never* mounted from the local blade running the VM. Instead:
-    1. The Aether Aggregator commands `aetherd` on the designated Storage Blade to cut the zvol and export it as an iSCSI target using the Linux SCSI Target framework (LIO).
-    2. The Compute Blade host OS acts as an iSCSI initiator, logging into the Storage Blade's iSCSI target portal over the high-speed **VLAN 11 (Storage Fabric)** via the `IscsiManager` trait in `aetherd`.
-    3. The Compute Blade maps the iSCSI target locally as a block device (e.g., `/dev/sdX`) and maps `/dev/sdX` directly down into Firecracker's `virtio-blk` drive interface or QEMU-KVM's disk configuration.
-*   **Storage Network Configuration (VLAN 11):** All iSCSI traffic is isolated on a dedicated high-bandwidth **VLAN 11 (Storage Fabric)** over the HPE Virtual Connect 10Gb midplane fabric. Both Compute and Storage blade network interfaces for VLAN 11 must be configured with Jumbo Frames (**MTU 9000**) to optimize SCSI command processing, reduce CPU overhead, and maximize throughput.
-*   **CSI Driver Mocking & Conformance (Test):** The aggregator includes a custom **`AetherCsiDriver`** (`crates/aether-aggregator/src/storage/csi.rs`) implementing the standard gRPC CSI v1.x service. In test and CI environments, this component acts as a high-fidelity mock, staging and publishing block capability requests as regular files and filesystem capability requests as directories, simulating network-attached block mappings without requiring live iSCSI targets or `democratic-csi` deployments.
+### Storage substrate (ZFS on Linux + CSI)
+Storage blades run **ZFS on Linux**; VM disks are thin, copy-on-write **ZVOL**
+clones of read-only base snapshots. For Kubernetes persistent volumes, Aether
+targets `democratic-csi` (`zfs-generic-iscsi`) with strict compute/storage
+decoupling: the storage blade cuts a ZVOL and exports it as an **iSCSI target
+(LIO)**; the compute blade logs in as an **initiator** over the storage fabric and
+maps the device into the guest.
 
-#### Kubernetes StorageClass Configuration Spec (Production)
-The GitOps configuration for the storage provisioner standardizes on `org.democratic-csi.zfs-generic-iscsi`:
+> **Implementation reality.** Today the `aetherd` side implements the **iSCSI
+> initiator** and the ZFS ZVOL operations (via native `zfs_core` bindings), while
+> the aggregator ships an **in-memory CSI mock**. The iSCSI **target/LIO export**
+> and the production ZVOL flags (lz4, thin) are not yet wired. See the
+> [storage & migration deep-dive](./docs/architecture/impl_storage_migration.md).
+
+#### Kubernetes StorageClass (production target)
 
 ```yaml
 apiVersion: storage.k8s.io/v1
@@ -135,7 +186,6 @@ provisioner: org.democratic-csi.zfs-generic-iscsi
 reclaimPolicy: Delete
 volumeBindingMode: Immediate
 parameters:
-  # Instructs democratic-csi to provision ZVOLs instead of datasets
   detachedVolumes: "true"
   zfsZpool: "zroot"
   zfsDatasetParent: "zroot/kube-storage"
@@ -144,125 +194,153 @@ parameters:
   zfsCompression: "lz4"
   zfsThinProvision: "true"
   fsType: "ext4"
-  
-  # iSCSI Network Target & Initiator mapping settings
   iscsi:
-    # Portal points to the storage blade target IP on VLAN 11 storage network
     portal: "10.11.0.10:3260"
     targetGroups:
       - name: default
         tpgt: 1
-    discovery:
-      auth:
-        type: None
-    session:
-      auth:
-        type: None
+    discovery: { auth: { type: None } }
+    session:   { auth: { type: None } }
 ```
 
-### Network Tagging (HPE Virtual Connect)
-*   **VLAN 10 (Control Bus):** Directs private control plane traffic, isolated in hardware via HPE Virtual Connect Flex-10 MLAG.
-*   **VLAN 999 (OOB Management):** Isolated management network connecting the Aggregator to HPE iLO 5 backplanes.
-*   **VLAN 20+ (Tenant Bridges):** Logical tenant traffic is segregated into discrete VLAN tags and bridged directly to VM virtual network cards via host Linux bridges (`br-tenant`).
+### Network tagging & VLANs
+*   **VLAN 10 — Control Bus:** private control-plane traffic (HPE Virtual Connect Flex-10 MLAG).
+*   **VLAN 11 — Storage Fabric:** all iSCSI traffic, **Jumbo Frames (MTU 9000)**.
+*   **VLAN 999 — OOB Management:** aggregator ↔ iLO 5.
+*   **VLAN 20+ — Tenant Bridges:** per-tenant VLANs bridged to guest NICs.
+
+> **Implementation reality.** `aetherd`'s `RealBridgeManager` programs tenant
+> bridges, L2 TAP devices, and MAC anti-spoofing using **netlink (`rtnetlink`),
+> `tun-rs`, and nftables (`rustables`)** directly — not `ip`/`brctl`/`ebtables`.
+> Details in the [security deep-dive §4](./docs/architecture/impl_security_protocol.md#4-networking).
 
 ---
 
 ## 4. Multi-Vendor Hardware Abstraction Layer (HAL)
 
-To prevent locking Project Aether into a single vendor's ecosystem, Aether abstracts all chassis-level management (power management, fencing, and midplane network tagging) behind a pluggable Hardware Abstraction Layer (HAL). This ensures that while our initial acquisition targets HPE BladeSystem c7000 enclosures, the control loops can seamlessly scale to support Dell PowerEdge, IBM/Lenovo Flex, or other systems in the future.
+Chassis-level concerns (power/fencing, midplane VLAN tagging) sit behind pluggable
+traits so Aether is not locked to HPE.
 
 ```
                     ┌──────────────────────────────────────┐
                     │          aether-aggregator           │
                     └──────────────────┬───────────────────┘
-                                       │
             ┌──────────────────────────┴──────────────────────────┐
             ▼                                                     ▼
 ┌───────────────────────┐                             ┌───────────────────────┐
 │     ChassisManager    │                             │ MidplaneNetworkManager│
 │        (Trait)        │                             │        (Trait)        │
 └───────────┬───────────┘                             └───────────┬───────────┘
-            │                                                     │
  ┌──────────┼──────────┐                               ┌──────────┼──────────┐
  ▼          ▼          ▼                               ▼          ▼          ▼
 HPE-iLO   Dell-iDRAC Generic-Redfish               HPE-VC    Dell-SmartFab  IBM-Flex
 ```
 
-### A. Out-of-Band Power & Fencing Trait (`aether-fence`)
-Power operations and fencing safety routines (STONITH) interact with chassis controllers through the `ChassisManager` Rust trait:
+### A. Chassis / fencing trait (`aether-fence`)
 
 ```rust
 #[async_trait]
 pub trait ChassisManager: Send + Sync {
-    /// Perform a hard reset or power shutdown on a specific blade slot.
     async fn power_off(&self, slot: u8) -> Result<(), FencingError>;
-    
-    /// Boot or power up a specific blade slot.
     async fn power_on(&self, slot: u8) -> Result<(), FencingError>;
-    
-    /// Query the current state of a slot (e.g., PoweredOn, PoweredOff, Unknown).
     async fn get_power_status(&self, slot: u8) -> Result<PowerStatus, FencingError>;
 }
 ```
 
-#### Driver Implementations:
-*   **`HpeIloProvider` (Initial Support):** Targets HPE iLO 5 controllers utilizing the DMTF Redfish API schema for power state control.
-*   **`DellIdracProvider` (Roadmap):** Targets Dell iDRAC (Integrated Dell Remote Access Controller) Redfish endpoints for PowerEdge MX7000 or FX2 chassis.
-*   **`GenericRedfishProvider` (Roadmap):** A fallback driver conforming strictly to baseline DMTF Redfish standard schemas, compatible with any Redfish-compliant BMC.
+Drivers: `HpeIloProvider` (initial), `DellIdracProvider`, `GenericRedfishProvider`
+(roadmap). *Implementation reality:* the `aether-fence` crate is a stub — this trait
+is a specified interface, not yet implemented (Stage 6).
 
----
-
-### B. Midplane Network Configuration Trait
-Configuring VLAN tagging on the midplane switch fabric is handled by the `MidplaneNetworkManager` trait:
+### B. Midplane network trait (`MidplaneNetworkManager`)
 
 ```rust
 #[async_trait]
 pub trait MidplaneNetworkManager: Send + Sync {
-    /// Bind a tenant VLAN tag to a specific blade slot's midplane fabric interface.
     async fn provision_vlan_interface(&self, slot: u8, vlan_id: u16) -> Result<(), NetworkError>;
-    
-    /// Unbind a tenant VLAN tag from a specific blade slot's midplane fabric.
     async fn teardown_vlan_interface(&self, slot: u8, vlan_id: u16) -> Result<(), NetworkError>;
 }
 ```
 
-#### Driver Implementations:
-*   **`HpeVirtualConnectProvider` (Initial Support):** Orchestrates HPE Virtual Connect modules via REST or SOAP endpoints to tag/untag VLAN profiles on FlexNICs.
-*   **`DellSmartFabricProvider` (Roadmap):** Orchestrates Dell PowerEdge MX I/O Modules using Dell SmartFabric Services (SFS) API.
-*   **`LenovoFlexProvider` (Roadmap):** Orchestrates Lenovo Flex System switches via SSH/REST CLI wrappers.
+Implemented driver: `VirtualConnectClient` (HPE OneView REST/JSON, session-token
+auth, async task polling). Roadmap: `DellSmartFabricProvider`, `LenovoFlexProvider`.
+Details in the [security deep-dive §4b](./docs/architecture/impl_security_protocol.md#4b-hpe-virtual-connect-client-aether-aggregatorsrcnetworkhpe_vcrs).
 
 ---
 
-## 5. Cluster API (CAPI) Compatibility Layer
+## 5. Concurrency & Error Model
 
-To enable Aether to serve as a target for Kubernetes Cluster API installations (via a future `cluster-api-provider-aether`), Aether implements a Kubernetes-native compatibility layer:
-*   **Declarative CRD Control:** The CAPI Infrastructure Machine controller provisions node VMs by creating and managing standard `AetherVirtualDeployment` CRDs rather than interacting directly with hypervisor endpoints.
-*   **Dynamic Cloud-Init Injection:** Aether dynamically consumes bootstrap secret configurations (e.g., Kubeadm scripts) via the `userDataSecretRef` field, delivering them to guest VMs using local Firecracker MMDS services or generated NoCloud seed ISO drives.
-*   **Failure Domains Expose:** Blade slots and chassis pools are exposed as native `FailureDomains` inside the cluster status, allowing CAPI to distribute control plane and worker nodes across separate physical blades.
+- **Runtime:** `tokio` everywhere; gRPC via `tonic`; trait objects via `async_trait`.
+- **Shared state:** guarded by `tokio::sync::RwLock`/`Mutex` (node registry, active
+  VM map, migration sets, QMP sockets). The single exception is the token replay
+  set, which uses a synchronous `parking_lot::Mutex` for its short critical section.
+- **Concurrency pattern:** the auction fans out one `tokio` task per node into a
+  `JoinSet`, each bounded by the 250 ms window; results are drained as they arrive.
+- **Errors:** no crate-wide `Result` alias. The aggregator defines a `thiserror`
+  `NetworkError`; elsewhere code uses `io::Result<T>` or `Result<_, String>`.
+  At the gRPC boundary, internal errors map to `tonic::Status`
+  (`unauthenticated`, `internal`, `invalid_argument`, `not_found`, `unimplemented`).
 
-For detailed specification contracts, schemas, and bootstrapping pipelines, refer to [capi_compatibility.md](file:///Users/casibbald/Workspace/remote/microscaler/Aether/docs/architecture/capi_compatibility.md).
-
----
-
-## 6. Live Migration & Auto-Convergence
-Aether supports live relocation of running workloads (primarily for the Infrastructure Pool using QEMU-KVM) to facilitate hardware maintenance or load balancing.
-
-*   **Three-Phase Memory Transfer:** Aether utilizes QEMU's pre-copy migration.
-    1. **Initial Setup:** Destination node allocates memory and prepares for incoming stream.
-    2. **Iterative Transfer:** Memory pages are copied while the VM continues to run. Dirty pages are re-tracked and re-sent.
-    3. **Stop-and-Copy:** Once the remaining dirty pages are small enough, the source VM is paused, the final state is transferred, and the destination VM resumes.
-*   **Block Replication (NBD Mirroring):** For local ephemeral disks, Aether orchestrates block mirroring over NBD (Network Block Device). Persistent data on iSCSI targets is handed over by re-attaching the target on the destination node.
-*   **Auto-Convergence:** To guarantee migration completion under high write loads, Aether enables the `auto-converge` capability, which dynamically throttles the VM's vCPUs if the memory dirty rate exceeds the available migration bandwidth.
-*   **Migration Scoring:** The `Bidder` applies a **15% penalty** to a node's bid score for each active migration it is currently processing, preventing node over-saturation during mass relocations.
+Full breakdown in the [security & protocol reference §6](./docs/architecture/impl_security_protocol.md#6-concurrency--error-model).
 
 ---
 
-## 7. Mocking & Hardware Emulation (`pact-mock-server`)
+## 6. Cluster API (CAPI) Compatibility
 
-Because Aether interacts with specialized data center hardware (HPE Synergy, Dell PowerEdge MX, etc.), testing against physical chassis in CI/CD is impractical. Project Aether utilizes a **contract-testing** approach with the `pact-mock-server`:
+Aether is designed to be a CAPI infrastructure target via a future
+`cluster-api-provider-aether`: the machine controller creates
+`AetherVirtualDeployment` CRDs instead of calling hypervisors directly; bootstrap
+data is injected via `userDataSecretRef` → Cloud-Init; and blade slots are exposed
+as `FailureDomains`. Contracts in
+[capi_compatibility.md](./docs/architecture/capi_compatibility.md). *(Stage 9 —
+planned.)*
 
-*   **REST API Fidelity:** The mock server emulates vendor-specific REST API schemas (e.g., HPE OneView, Dell OpenManage Enterprise) with high fidelity, returning valid JSON responses, status codes, and error conditions.
-*   **Pact Integration:** We use [Pact.io](https://pact.io/) to define contracts between Aether drivers (Consumers) and the Mock Server (Provider). This ensures that driver logic stays synchronized with real-world API behaviors.
-*   **Stateful Mocks:** The `pact-mock-server` maintains internal state for simulated chassis (e.g., list of slots, current power states, VLAN profiles), allowing drivers to perform sequential operations (e.g., PowerOn -> QueryStatus) with consistent results.
+---
 
-For more information on running or extending mocks, see [CONTRIBUTING.md](file:///Users/casibbald/Workspace/remote/microscaler/Aether/CONTRIBUTING.md).
+## 7. Live Migration & Auto-Convergence
+
+Live relocation targets the Infrastructure Pool (QEMU-KVM), driven over QMP:
+three-phase pre-copy memory transfer, NBD `drive-mirror` for local disks, and
+QEMU-native **auto-converge** for write-heavy guests. The `Bidder` applies a **15 %
+score penalty per active migration** to prevent oversaturation.
+
+> **Implementation reality.** The migration socket + mTLS + HMAC-attestation layer
+> is the most complete data-plane component; the memory/block/converge modules are
+> thin QMP wrappers (no custom throttle, no timeout/rollback yet). Full state
+> machine, framing, and constants in the
+> [storage & migration deep-dive §5](./docs/architecture/impl_storage_migration.md#5-live-migration-state-machine)
+> and the design spec [live_migration.md](./docs/architecture/live_migration.md).
+
+---
+
+## 8. Implementation Maturity Matrix
+
+Snapshot as of the Epics 1–5 audit (`docs/EPICS/audit_dev_1to5.md`; 152 passing
+tests across four crates, ~87 % line coverage). "Tested" = has unit/integration
+coverage; "Real, untested" = production code path without tests; "Mock/stub" =
+placeholder or in-memory simulation; "Planned" = not yet built.
+
+| Subsystem | Status |
+| :--- | :--- |
+| mTLS transport + attestation tokens | ✅ Tested (dev PKI only; no prod cert path, no rotation) |
+| Reverse-bid scoring & rejection | ✅ Tested (healthy-score value & penalty gradients untested) |
+| Tie-breaker (3 tiers) | ✅ Tested |
+| Node registry + heartbeat/pruning | ✅ Tested |
+| Auction broadcast / 250 ms convergence | ✅ Tested (against mock scorers) |
+| Firecracker driver lifecycle | ✅ Tested (mock process; real boot unverified) |
+| QEMU driver + QMP client | 🟨 Partial (mock QMP; arg vector untested) |
+| Cloud-Init ISO generation | ✅ Tested — but **ISO not mounted into the VM yet** |
+| VSOCK (UDS multiplexer + mTLS) | ✅ Tested |
+| iSCSI **initiator** | ✅ Tested |
+| iSCSI **target / LIO export** | ⛔ Planned |
+| ZFS ZVOL manager | 🟧 Real, untested (no lz4/thin flags) |
+| CSI driver | 🟨 Tested **mock** (in-memory; snapshots/expand unimplemented) |
+| Tenant bridge (netlink/nftables) | 🟧 Real, untested (coverage-excluded cfg) |
+| HPE Virtual Connect client | ✅ Contract-tested (not real hardware) |
+| Migration socket + attestation | ✅ Tested (most complete migration piece) |
+| Memory / block / auto-converge | 🟧 Thin QMP wrappers, untested |
+| OOB fencing (`aether-fence`) | ⛔ Planned (Stage 6) |
+| Multi-vendor HAL drivers | ⛔ Planned (Stage 8) |
+| CAPI provider | ⛔ Planned (Stage 9) |
+
+For per-item detail and `file:line` evidence, follow the deep-dive links above.
+Roadmap staging is tracked in the [README](./README.md#delivery-stages--product-roadmap).
