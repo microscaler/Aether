@@ -23,6 +23,9 @@ stateless, decentralized control plane written in Rust.
 | Hypervisor drivers, QMP, Cloud-Init, VM lifecycle | [impl_hypervisor_lifecycle.md](./docs/architecture/impl_hypervisor_lifecycle.md) |
 | ZFS/ZVOL, iSCSI, CSI, live migration | [impl_storage_migration.md](./docs/architecture/impl_storage_migration.md) |
 | mTLS, attestation, full gRPC protocol, networking, concurrency | [impl_security_protocol.md](./docs/architecture/impl_security_protocol.md) |
+| **HA: fencing (STONITH), heartbeat/deadman, OOB corroboration, recovery/re-auction** | [impl_ha_recovery.md](./docs/architecture/impl_ha_recovery.md) |
+| **Storage node: iSCSI target export, provisioning RPC, ZVOL replication, pool-aware discovery** | [impl_storage_node.md](./docs/architecture/impl_storage_node.md) |
+| **Network identity: stable MAC → DCops NetBox/IPAM (DHCP) handoff** | [impl_network_identity.md](./docs/architecture/impl_network_identity.md) |
 
 Design/spec companions (intended state, not code-derived): [live_migration.md](./docs/architecture/live_migration.md),
 [capi_compatibility.md](./docs/architecture/capi_compatibility.md),
@@ -79,24 +82,29 @@ graph TD
 
 | Crate | Role | Key modules |
 | :--- | :--- | :--- |
-| `aether-aggregator` | Stateless K8s operator & auction coordinator | `scheduler`, `registry`, `tie_breaker`, `storage/csi`, `network/hpe_vc` |
-| `aetherd` | Per-blade node daemon | `bidder`, `telemetry`, `hypervisor/{firecracker,qemu}`, `storage/{zfs,iscsi}`, `migration/*`, `network/bridge`, `cloud_init`, `vsock` |
+| `aether-aggregator` | Stateless K8s operator & auction coordinator | `scheduler`, `registry` (pool-aware), `tie_breaker`, `fencing`, `recovery` (placement + re-auction + `StorageProvisioner`), `placement`, `identity`, `storage/csi`, `network/hpe_vc` |
+| `aetherd` | Per-blade compute **or** storage node daemon | `bidder`, `telemetry`, `hypervisor/{firecracker,qemu}`, `storage/{zfs,iscsi,iscsi_target,node,replication}`, `storage_service`, `heartbeat`, `migration/*`, `network/bridge`, `cloud_init`, `vsock` |
 | `aether-auth` | Shared mTLS + attestation, generated proto bindings | `mtls`, `token`, `lib` (`include_proto!`) |
-| `aether-fence` | OOB STONITH via Redfish | *(planned — near-empty stub today)* |
+| `aether-fence` | OOB STONITH via Redfish | `chassis` (trait), `providers/{redfish,hpe_ilo,dell_idrac}`, `mock` |
 | `pact-mock-server` | Hardware mock (HPE OneView) for contract tests | `hpe_oneview`, `bin/oneview` |
 
 ### A. Aether Aggregator (`aether-aggregator`)
 Stateless Rust Kubernetes Operator and central coordinator.
 *   **GitOps reconciliation:** watches CRDs (`AetherTenant`, `AetherVirtualDeployment`) applied by FluxCD.
 *   **Soft state:** in-memory `NodeRegistry` + placement tables under `tokio::sync::RwLock`.
-*   **Auction coordinator:** broadcasts reverse-bid requests, collects scores, runs the deterministic tie-breaker, issues provisioning directives. → [bidding deep-dive](./docs/architecture/impl_bidding_scheduling.md).
-*   **HA monitor:** prunes nodes that miss heartbeats and (by design) invokes `aether-fence` before re-auctioning orphaned VMs.
+*   **Auction coordinator:** broadcasts reverse-bid requests to *schedulable* nodes (storage nodes excluded), collects scores, runs the deterministic tie-breaker, issues provisioning directives. → [bidding deep-dive](./docs/architecture/impl_bidding_scheduling.md).
+*   **Placement + recovery:** records each placement (`PlacementRegistry`), reserves the VM's stable MAC (`NetworkIdentityProvider`), and provisions a disk on a discovered storage node when a workload is submitted without one (`StorageProvisioner`). → [HA deep-dive](./docs/architecture/impl_ha_recovery.md), [storage-node deep-dive](./docs/architecture/impl_storage_node.md), [network-identity deep-dive](./docs/architecture/impl_network_identity.md).
+*   **HA monitor:** prunes nodes that miss heartbeats, excludes storage nodes, gates STONITH on out-of-band corroboration, then re-auctions the fenced node's orphaned VMs through the same placer/dispatcher. → [HA deep-dive](./docs/architecture/impl_ha_recovery.md).
 
 ### B. Aether Node Daemon (`aetherd`)
-Single zero-dependency binary, one per blade, run as a systemd service.
+Single binary, one per blade, run as a systemd service. It has two **roles**,
+selected at startup (`AETHER_ROLE=storage` picks the storage role; otherwise the
+compute/infra role). Both register with the aggregator and keep a **heartbeat**
+lease (`heartbeat::spawn_heartbeat`, 5 s) so they aren't pruned and fenced.
 *   **Telemetry:** `/proc/loadavg`, `/proc/meminfo`, `statvfs`, NVMe S.M.A.R.T.
-*   **Auction respondent:** scores local telemetry and returns a bid.
-*   **Provisioner:** builds a NoCloud Cloud-Init ISO, configures networking, and spawns Firecracker (compute) or QEMU-KVM (infra). → [hypervisor deep-dive](./docs/architecture/impl_hypervisor_lifecycle.md).
+*   **Auction respondent (compute/infra role):** scores local telemetry and returns a bid.
+*   **Provisioner (compute/infra role):** builds a NoCloud Cloud-Init ISO, configures networking, and spawns Firecracker (compute) or QEMU-KVM (infra). → [hypervisor deep-dive](./docs/architecture/impl_hypervisor_lifecycle.md).
+*   **Storage role:** carves ZVOLs, exports them as iSCSI LUNs, replicates them to a standby, and serves the `AetherStorage` provisioning RPC; registers as `POOL_STORAGE`. → [storage-node deep-dive](./docs/architecture/impl_storage_node.md).
 
 > **Implementation reality.** Backend selection is currently a per-request
 > threshold (`cpu_limit < 4` ⇒ Firecracker) rather than a blade-role/CRD-profile
@@ -109,9 +117,21 @@ Shared security library linked into both daemons.
 
 ### D. Fencing Controller (`aether-fence`)
 Out-of-band power-execution plane for STONITH via the HPE iLO 5 Redfish API.
-Guarantees a partitioned node is powered off before its volumes are cloned or its
-VMs re-auctioned. *Implementation reality:* this crate is a near-empty stub today
-(Stage 6). The `ChassisManager` trait shape is specified in §4.
+Guarantees a partitioned node is powered off before its VMs are re-auctioned, so a
+partitioned-but-alive node can't keep writing to the shared iSCSI LUN.
+*Implementation reality:* the `ChassisManager` trait, a shared `RedfishClient`
+core, and the `HpeIloProvider` / `DellIdracProvider` drivers are implemented and
+tested. The aggregator's prune loop (`aggregator::fencing::NodeFencer`) fences
+dropped nodes and then recovers their workloads (§below and the
+[HA deep-dive](./docs/architecture/impl_ha_recovery.md)). It now: excludes
+`POOL_STORAGE` nodes from fencing; gates STONITH on an optional
+`LivenessCorroborator` (the out-of-band veto seam where an iLO/OneView power-state
+check drops in to avoid fencing a live-but-partitioned node); and is driven by the
+node **heartbeat** deadman. Still pending: sourcing per-chassis iLO/iDRAC
+credentials from config, and a real corroborator implementation (dev uses
+`MockChassisManager` and no corroborator = unconditional STONITH). OneView (the
+[pact mock](./docs/architecture/impl_security_protocol.md#5-hardware-mock-pact-mock-server))
+is the hardware-truth/actuation layer, **not** the heartbeat — see the HA deep-dive.
 
 ### E. Pact Mock Server (`pact-mock-server`)
 Vendor-modularized mock of chassis REST APIs (HPE OneView), used for contract
@@ -247,9 +267,12 @@ pub trait ChassisManager: Send + Sync {
 }
 ```
 
-Drivers: `HpeIloProvider` (initial), `DellIdracProvider`, `GenericRedfishProvider`
-(roadmap). *Implementation reality:* the `aether-fence` crate is a stub — this trait
-is a specified interface, not yet implemented (Stage 6).
+Drivers live under `aether-fence`'s `providers/` module and share a common
+`RedfishClient` core; each vendor driver only supplies its slot→`ComputerSystem`-id
+mapping. `HpeIloProvider` (slot → numeric id) and `DellIdracProvider` (fixed
+`System.Embedded.1`) are implemented and tested; a `GenericRedfishProvider` or a
+non-Redfish transport (IPMI, OA/SOAP) is a one-module addition against the same
+`ChassisManager` trait. The aggregator consumes this via `fencing::NodeFencer`.
 
 ### B. Midplane network trait (`MidplaneNetworkManager`)
 
@@ -331,14 +354,21 @@ placeholder or in-memory simulation; "Planned" = not yet built.
 | Cloud-Init ISO generation | ✅ Tested — but **ISO not mounted into the VM yet** |
 | VSOCK (UDS multiplexer + mTLS) | ✅ Tested |
 | iSCSI **initiator** | ✅ Tested |
-| iSCSI **target / LIO export** | ⛔ Planned |
+| iSCSI **target / LIO export** (`storage/iscsi_target`) | 🟩 Built — `IscsiTargetManager` mock tested; real `targetcli`/LIO shell-out untested |
+| Storage node: provision/deprovision + `AetherStorage` RPC (`storage/node`, `storage_service`) | ✅ Tested — ZVOL carve → iSCSI export → `iscsi://` URI, with rollback; token-checked RPC |
+| Async ZVOL replication (`storage/replication`, EPIC-06.4) | ✅ Tested — full/incremental `zfs send`, RPO-safe baseline, overlap guard, lifecycle decorator + RPO integration test; real engine (zrepl/array) deferred behind the transport seam |
+| Storage-node registration + discovery (pool-aware `registry`, `GrpcStorageProvisioner`) | 🟩 Wired — `POOL_STORAGE` registration, `schedulable_nodes`/`pick_in_pool`; discovery-miss tested, gRPC path mock-node testable |
+| Node heartbeat / deadman (`aetherd::heartbeat`) | 🟩 Wired into both roles (5 s); exercised by the aggregator heartbeat/prune tests |
+| Network identity: stable MAC → DCops IPAM (`identity`) | ✅ Tested — deterministic MAC, `NetBoxIpClaim` render (no-address invariant), GitOps `ManifestClaimPublisher`; live `kube` apply deferred |
 | ZFS ZVOL manager | 🟧 Real, untested (no lz4/thin flags) |
 | CSI driver | 🟨 Tested **mock** (in-memory; snapshots/expand unimplemented) |
 | Tenant bridge (netlink/nftables) | 🟧 Real, untested (coverage-excluded cfg) |
 | HPE Virtual Connect client | ✅ Contract-tested (not real hardware) |
 | Migration socket + attestation | ✅ Tested (most complete migration piece) |
 | Memory / block / auto-converge | 🟧 Thin QMP wrappers, untested |
-| OOB fencing (`aether-fence`) | ⛔ Planned (Stage 6) |
+| OOB fencing (`aether-fence` + `aggregator::fencing`) | 🟨 Partial — trait + iLO/iDRAC Redfish drivers tested, wired into the prune loop with storage-pool exclusion and a `LivenessCorroborator` veto seam (both tested with mocks). Pending: real OOB creds + a real iLO/OneView corroborator |
+| Placement backend (`placement` + `recovery::PlacementService`) | 🟩 Wired — `PlaceWorkload` RPC → (provision disk if none) → reserve MAC → auction → `ExecuteVM` dispatch → record. Closes the scheduling loop (places *and* remembers); real gRPC path is mock-node testable |
+| HA recovery (`recovery::RecoveryService`) | 🟩 Wired — orphan lookup → re-auction → dispatch → reassign, tested, driven by the fence loop and sharing the placer/dispatcher with initial placement. Remaining: placement removal + volume de-provision on VM teardown |
 | Multi-vendor HAL drivers | ⛔ Planned (Stage 8) |
 | CAPI provider | ⛔ Planned (Stage 9) |
 

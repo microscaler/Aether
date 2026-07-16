@@ -1,9 +1,18 @@
 # Epic: Out-of-Band Fencing & HA
 
-*   **Status:** Planned
+*   **Status:** In Progress
 *   **Epic ID:** `EPIC-06`
 *   **Target Roadmap Stage:** Stage 6: Out-of-Band Fencing & HA
 *   **Owner:** [@username]
+
+> **Progress note.** Fencing (`aether-fence` iLO/iDRAC Redfish drivers), the
+> reconciler deadman heartbeat, the STONITH-and-recover workflow (with storage
+> exclusion and an out-of-band corroboration veto seam), and async ZVOL
+> replication are all implemented and tested behind mocks. Remaining for the
+> epic: real per-chassis OOB credentials, a real iLO/OneView corroborator, and
+> full management-plane auto-discovery sync (06.5). See the
+> [HA deep-dive](../../architecture/impl_ha_recovery.md) and
+> [storage-node deep-dive](../../architecture/impl_storage_node.md).
 
 ---
 
@@ -13,11 +22,11 @@ This Epic implements high availability and safety measures for Project Aether. I
 
 ## 2. User Stories
 
-- [ ] `[STORY-06.1]` [iLO 5 Redfish API Client & Power Command Driver](file:///Users/casibbald/Workspace/remote/microscaler/Aether/docs/EPICS/epic_06_oob_fencing_ha/story_06_1_redfish_ilo.md) - **Status:** Draft
-- [ ] `[STORY-06.2]` [Reconciler Deadman Switch Heartbeat & Failover Monitoring](file:///Users/casibbald/Workspace/remote/microscaler/Aether/docs/EPICS/epic_06_oob_fencing_ha/story_06_2_deadman_switch.md) - **Status:** Draft
-- [ ] `[STORY-06.3]` [STONITH Fencing Execution Workflow](file:///Users/casibbald/Workspace/remote/microscaler/Aether/docs/EPICS/epic_06_oob_fencing_ha/story_06_3_stonith_workflow.md) - **Status:** Draft
-- [ ] `[STORY-06.4]` [Asynchronous ZFS Volume Replication (zrepl integration)](file:///Users/casibbald/Workspace/remote/microscaler/Aether/docs/EPICS/epic_06_oob_fencing_ha/story_06_4_zfs_replication.md) - **Status:** Draft
-- [ ] `[STORY-06.5]` [Kubernetes Management Plane Recovery & Auto-Discovery Sync](file:///Users/casibbald/Workspace/remote/microscaler/Aether/docs/EPICS/epic_06_oob_fencing_ha/story_06_5_k8s_recovery_discovery.md) - **Status:** Draft
+- [x] `[STORY-06.1]` [iLO 5 Redfish API Client & Power Command Driver](file:///Users/casibbald/Workspace/remote/microscaler/Aether/docs/EPICS/epic_06_oob_fencing_ha/story_06_1_redfish_ilo.md) - **Status:** Done (drivers built + tested; real OOB creds pending)
+- [x] `[STORY-06.2]` [Reconciler Deadman Switch Heartbeat & Failover Monitoring](file:///Users/casibbald/Workspace/remote/microscaler/Aether/docs/EPICS/epic_06_oob_fencing_ha/story_06_2_deadman_switch.md) - **Status:** Done (node heartbeat loop + registry prune)
+- [x] `[STORY-06.3]` [STONITH Fencing Execution Workflow](file:///Users/casibbald/Workspace/remote/microscaler/Aether/docs/EPICS/epic_06_oob_fencing_ha/story_06_3_stonith_workflow.md) - **Status:** Done (prune → exclude storage → corroborate → fence → recover; real corroborator pending)
+- [x] `[STORY-06.4]` [Asynchronous ZFS Volume Replication (zrepl integration)](file:///Users/casibbald/Workspace/remote/microscaler/Aether/docs/EPICS/epic_06_oob_fencing_ha/story_06_4_zfs_replication.md) - **Status:** In Progress (`ZfsReplicator` engine + RPO/overlap tested; `zrepl`/array engine deferred behind the `SnapshotTransport` seam)
+- [ ] `[STORY-06.5]` [Kubernetes Management Plane Recovery & Auto-Discovery Sync](file:///Users/casibbald/Workspace/remote/microscaler/Aether/docs/EPICS/epic_06_oob_fencing_ha/story_06_5_k8s_recovery_discovery.md) - **Status:** In Progress (pool-aware registration + storage discovery done; full management-plane sync pending)
 
 ## 3. Technical Design & Architecture Constraints
 

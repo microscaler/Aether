@@ -159,10 +159,10 @@ The workspace is composed of five crates:
 
 | Crate | Role |
 | :--- | :--- |
-| [`aetherd`](./crates/aetherd) | The per-blade node daemon: hypervisor drivers (Firecracker + QEMU), storage (ZFS/iSCSI), Linux-bridge networking, live migration, Cloud-Init, telemetry, VSOCK, and the local bidding algorithm. |
-| [`aether-aggregator`](./crates/aether-aggregator) | The stateless Kubernetes operator: node registry, bid scheduler, deterministic tie-breaker, CSI storage driver, and HPE Virtual Connect networking. |
+| [`aetherd`](./crates/aetherd) | The per-blade node daemon, in a **compute/infra** or **storage** role: hypervisor drivers (Firecracker + QEMU), storage (ZFS/iSCSI, plus iSCSI target export + ZVOL replication in the storage role), Linux-bridge networking, live migration, Cloud-Init, telemetry, VSOCK, heartbeat, and the local bidding algorithm. |
+| [`aether-aggregator`](./crates/aether-aggregator) | The stateless Kubernetes operator: pool-aware node registry, bid scheduler, deterministic tie-breaker, HA fencing + recovery (re-auction), stable-MAC identity, storage provisioning/discovery, CSI storage driver, and HPE Virtual Connect networking. |
 | [`aether-auth`](./crates/aether-auth) | Shared mTLS handshakes and single-use ephemeral attestation tokens. |
-| [`aether-fence`](./crates/aether-fence) | Out-of-band STONITH fencing via the iLO 5 Redfish API *(planned — see Stage 6)*. |
+| [`aether-fence`](./crates/aether-fence) | Out-of-band STONITH fencing via the iLO 5 Redfish API (iLO/iDRAC drivers built; wired into the HA loop). |
 | [`pact-mock-server`](./crates/pact-mock-server) | Contract-test mock server for validating gRPC API boundaries. |
 
 gRPC contracts live in [`proto/`](./proto); design documents live in [`docs/`](./docs).
@@ -210,10 +210,15 @@ The programme is organized into incremental stages that safely migrate a fleet o
 - Iterative memory pre-copy over TCP migration sockets.
 - Auto-Converge vCPU throttling to guarantee convergence under active write loads.
 
-### ░░ Stage 6 — Out-of-Band Fencing & HA *(Planned)*
-- Redfish STONITH client (`aether-fence`) targeting HPE iLO 5 endpoints.
-- Stateless HA deadman-switch loop (15s heartbeat-timeout failover).
-- ZFS asynchronous volume replication (`zrepl`) for DR (RPO 5m).
+### 🟦 Stage 6 — Out-of-Band Fencing & HA *(In Progress)*
+- Redfish STONITH client (`aether-fence`) targeting HPE iLO 5 / iDRAC endpoints. ✅ built + tested
+- Node heartbeat deadman loop (5s beat, 15s prune-timeout failover). ✅ wired
+- STONITH-and-recover workflow: prune → exclude storage nodes → out-of-band corroboration veto → power-off → re-auction the orphaned VMs. ✅ built (real iLO/OneView corroborator pending)
+- Disaggregated **storage node**: ZVOL provisioning, iSCSI target export, and on-demand volume provisioning from placement. ✅ built
+- ZFS asynchronous volume replication for DR (RPO 5m). ✅ engine built (`zrepl`/array integration deferred behind a transport seam)
+- Stable-MAC identity handed off to DCops NetBox/IPAM so a recovered VM keeps its IP. ✅ built
+
+See the [HA](./docs/architecture/impl_ha_recovery.md), [storage-node](./docs/architecture/impl_storage_node.md), and [network-identity](./docs/architecture/impl_network_identity.md) deep-dives.
 
 ### ░░ Stage 7 — Developer CLI & Guest Operations *(Planned)*
 - The `aether` developer CLI client.
